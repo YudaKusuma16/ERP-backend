@@ -1,0 +1,26 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('al_line_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('al_id')->constrained('acceptance_letters')->cascadeOnDelete();
+            $table->foreignId('item_id')->nullable()->constrained('master_items')->nullOnDelete();
+            $table->string('item_name');
+            $table->enum('item_status', ['terpasang', 'ex_remote', 'tidak_jadi'])->default('terpasang');
+            $table->string('location')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('al_line_items');
+    }
+};
