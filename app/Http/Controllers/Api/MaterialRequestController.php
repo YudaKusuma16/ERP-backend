@@ -53,14 +53,21 @@ class MaterialRequestController extends Controller
             'source_type' => 'required|in:internal,asset,customer,project_internal',
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|exists:master_items,id',
+            'items.*.item_id' => 'nullable|exists:master_items,id',
+            'items.*.item_name' => 'nullable|string|max:255',
             'items.*.qty' => 'required|numeric|min:0.01',
             'items.*.unit' => 'required|string',
             'items.*.description' => 'nullable|string',
         ]);
 
-        $inactiveItems = MasterItem::whereIn('id', collect($validated['items'])->pluck('item_id'))
-            ->where('status', '!=', 'active')->exists();
+        foreach ($validated['items'] as $line) {
+            if (empty($line['item_id']) && empty($line['item_name'])) {
+                return response()->json(['message' => 'Each line item must select an item or input item name.'], 422);
+            }
+        }
+
+        $selectedItemIds = collect($validated['items'])->pluck('item_id')->filter()->values();
+        $inactiveItems = MasterItem::whereIn('id', $selectedItemIds)->where('status', '!=', 'active')->exists();
         if ($inactiveItems) {
             return response()->json(['message' => 'All items must have ACTIVE status.'], 422);
         }
@@ -77,9 +84,14 @@ class MaterialRequestController extends Controller
             ]);
 
             foreach ($validated['items'] as $item) {
+                $itemModel = null;
+                if (!empty($item['item_id'])) {
+                    $itemModel = MasterItem::find($item['item_id']);
+                }
                 MrLineItem::create([
                     'mr_id' => $mr->id,
-                    'item_id' => $item['item_id'],
+                    'item_id' => $item['item_id'] ?? null,
+                    'item_name' => $itemModel?->name ?? ($item['item_name'] ?? null),
                     'qty' => $item['qty'],
                     'unit' => $item['unit'],
                     'description' => $item['description'] ?? null,
@@ -264,7 +276,7 @@ class MaterialRequestController extends Controller
             foreach ($flaggedItems as $item) {
                 PrLineItem::create([
                     'pr_id' => $pr->id,
-                    'item_name' => $item->item->name,
+                    'item_name' => $item->item->name ?? $item->item_name ?? 'Manual Item',
                     'qty' => $item->qty,
                     'unit' => $item->unit,
                     'description' => $item->description,
