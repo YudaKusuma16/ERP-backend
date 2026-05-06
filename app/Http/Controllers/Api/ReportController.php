@@ -52,7 +52,7 @@ class ReportController extends Controller
             ->get();
 
         $monthlyVolume = PurchaseOrder::select(
-            DB::raw("DATE_FORMAT(purchase_orders.date, '%Y-%m') as month"),
+            DB::raw("TO_CHAR(purchase_orders.date, 'YYYY-MM') as month"),
             DB::raw('SUM(purchase_orders.total_value) as total'),
             DB::raw('count(*) as count')
         )
@@ -78,7 +78,7 @@ class ReportController extends Controller
     {
         $turnaround = DB::select("
             SELECT doc_type,
-                   AVG(TIMESTAMPDIFF(HOUR, created_at, updated_at)) as avg_hours,
+                   AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 3600) as avg_hours,
                    COUNT(*) as total_docs
             FROM (
                 SELECT 'MR' as doc_type, created_at, updated_at FROM material_requests WHERE status IN ('approved', 'pr_created')
