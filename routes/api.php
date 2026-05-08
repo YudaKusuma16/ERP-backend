@@ -52,8 +52,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('master-items/{masterItem}/validate', [MasterItemController::class, 'validateByAccounting']);
     Route::post('master-items/{masterItem}/resubmit', [MasterItemController::class, 'resubmit']);
 
-    Route::apiResource('master-vendors', MasterVendorController::class);
-    Route::post('master-vendors/{masterVendor}/status', [MasterVendorController::class, 'changeStatus']);
+    Route::get('master-vendors', [MasterVendorController::class, 'index'])->middleware('role:purchasing,accounting');
+    Route::get('master-vendors/{masterVendor}', [MasterVendorController::class, 'show'])->middleware('role:purchasing,accounting');
+    Route::post('master-vendors', [MasterVendorController::class, 'store'])->middleware('role:purchasing,accounting');
+    Route::put('master-vendors/{masterVendor}', [MasterVendorController::class, 'update'])->middleware('role:purchasing,accounting');
+    Route::patch('master-vendors/{masterVendor}', [MasterVendorController::class, 'update'])->middleware('role:purchasing,accounting');
+    Route::delete('master-vendors/{masterVendor}', [MasterVendorController::class, 'destroy'])->middleware('role:purchasing,accounting');
+    Route::post('master-vendors/{masterVendor}/status', [MasterVendorController::class, 'changeStatus'])->middleware('role:purchasing,accounting');
 
     Route::apiResource('material-requests', MaterialRequestController::class);
     Route::post('material-requests/{materialRequest}/approve-dept-head', [MaterialRequestController::class, 'approveByDeptHead']);

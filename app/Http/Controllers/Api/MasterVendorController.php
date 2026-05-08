@@ -10,6 +10,13 @@ use Illuminate\Http\Request;
 
 class MasterVendorController extends Controller
 {
+    private const DETAIL_FIELDS = [
+        'bank_name',
+        'bank_account_number',
+        'bank_account_holder',
+        'payment_terms',
+    ];
+
     public function __construct(
         private AuditTrailService $auditTrail,
     ) {}
@@ -37,6 +44,7 @@ class MasterVendorController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $user = $request->user();
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'type' => 'required|in:supplier,contractor,service_provider',
@@ -50,13 +58,23 @@ class MasterVendorController extends Controller
             'payment_terms' => 'nullable|string|max:255',
         ]);
 
+        if ($user->isAccounting() && $this->hasDetailInput($request)) {
+            return response()->json(['message' => 'Accounting can only input vendor header data.'], 403);
+        }
+
+        if ($user->isAccounting()) {
+            foreach (self::DETAIL_FIELDS as $field) {
+                $validated[$field] = null;
+            }
+        }
+
         $vendor = MasterVendor::create([
             ...$validated,
             'status' => 'active',
-            'created_by' => $request->user()->id,
+            'created_by' => $user->id,
         ]);
 
-        $this->auditTrail->log('master_vendor', $vendor->id, $request->user()->id, 'draft', 'active', 'Vendor created and activated');
+        $this->auditTrail->log('master_vendor', $vendor->id, $user->id, 'draft', 'active', 'Vendor created and activated');
 
         return response()->json([
             'message' => 'Vendor created successfully.',
@@ -73,6 +91,7 @@ class MasterVendorController extends Controller
 
     public function update(Request $request, MasterVendor $masterVendor): JsonResponse
     {
+        $user = $request->user();
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'type' => 'sometimes|in:supplier,contractor,service_provider',
@@ -85,6 +104,16 @@ class MasterVendorController extends Controller
             'bank_account_holder' => 'nullable|string|max:255',
             'payment_terms' => 'nullable|string|max:255',
         ]);
+
+        if ($user->isAccounting() && $this->hasDetailInput($request)) {
+            return response()->json(['message' => 'Accounting can only update vendor header data.'], 403);
+        }
+
+        if ($user->isAccounting()) {
+            foreach (self::DETAIL_FIELDS as $field) {
+                unset($validated[$field]);
+            }
+        }
 
         $fromStatus = $masterVendor->status;
         $masterVendor->update($validated);
@@ -112,5 +141,25 @@ class MasterVendorController extends Controller
             'message' => 'Vendor status updated.',
             'vendor' => $masterVendor->fresh()->load('createdBy'),
         ]);
+    }
+
+    public function destroy(MasterVendor $masterVendor): JsonResponse
+    {
+        $masterVendor->delete();
+
+        return response()->json([
+            'message' => 'Vendor deleted successfully.',
+        ]);
+    }
+
+    private function hasDetailInput(Request $request): bool
+    {
+        foreach (self::DETAIL_FIELDS as $field) {
+            if ($request->filled($field)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

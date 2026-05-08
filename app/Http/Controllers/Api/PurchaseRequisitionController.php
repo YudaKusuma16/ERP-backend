@@ -114,6 +114,10 @@ class PurchaseRequisitionController extends Controller
             'reason' => 'required_if:action,decline|string|nullable',
         ]);
 
+        if ($validated['action'] === 'approve' && (int) $purchaseRequisition->pihak1_id === (int) $request->user()->id) {
+            return response()->json(['message' => 'User who input pricing cannot approve this PR.'], 403);
+        }
+
         if ($validated['action'] === 'decline') {
             $fromStatus = $purchaseRequisition->status;
             $purchaseRequisition->update(['status' => 'declined']);
