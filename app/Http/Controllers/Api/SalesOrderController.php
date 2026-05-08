@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\DeliveryInstruction;
 use App\Models\MasterItem;
 use App\Models\MaterialRequest;
 use App\Models\MrLineItem;
@@ -71,7 +70,13 @@ class SalesOrderController extends Controller
     public function show(SalesOrder $salesOrder): JsonResponse
     {
         return response()->json([
-            'so' => $salesOrder->load('creator'),
+            'so' => $salesOrder->load(
+                'creator',
+                'materialRequests.lineItems.item',
+                'materialRequests.requestor',
+                'materialRequests.department',
+                'materialRequests.deliveryInstruction.deliveryNote'
+            ),
         ]);
     }
 
@@ -202,21 +207,9 @@ class SalesOrderController extends Controller
                 $mr->id
             );
 
-            // Auto-create DI draft from MR so it appears in Delivery Instructions immediately.
-            $di = DeliveryInstruction::create([
-                'number' => $this->docNumbering->generate('di'),
-                'date' => now()->toDateString(),
-                'mr_id' => $mr->id,
-                'warehouse_id' => null,
-                'status' => 'draft',
-                'created_by' => $request->user()->id,
-            ]);
-            $this->auditTrail->log('di', $di->id, $request->user()->id, 'created', 'draft', 'DI created from SO ' . $salesOrder->number);
-
             return response()->json([
                 'message' => 'Material Request created from Sales Order.',
                 'mr' => $mr->load('lineItems.item', 'requestor', 'department'),
-                'delivery_instruction' => $di->load('materialRequest', 'creator'),
             ], 201);
         });
     }

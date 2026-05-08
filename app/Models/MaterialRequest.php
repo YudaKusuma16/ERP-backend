@@ -54,6 +54,11 @@ class MaterialRequest extends Model
         return $this->hasMany(MrLineItem::class, 'mr_id');
     }
 
+    public function deliveryInstruction()
+    {
+        return $this->hasOne(DeliveryInstruction::class, 'mr_id');
+    }
+
     public function purchaseRequisition()
     {
         return $this->hasOne(PurchaseRequisition::class, 'source_id')->where('source_type', 'mr');
