@@ -54,31 +54,16 @@ class MaterialRequestController extends Controller
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'nullable|exists:master_items,id',
-<<<<<<< HEAD
             'items.*.item_name' => 'required_without:items.*.item_id|string|max:255',
-=======
-            'items.*.item_name' => 'nullable|string|max:255',
->>>>>>> f1b7b55244731bd9c8ab115dfb82ddb1dd381f2a
             'items.*.qty' => 'required|numeric|min:0.01',
             'items.*.unit' => 'required|string',
             'items.*.description' => 'nullable|string',
         ]);
 
-<<<<<<< HEAD
         $itemIds = collect($validated['items'])->pluck('item_id')->filter()->values();
         $inactiveItems = $itemIds->isNotEmpty()
             ? MasterItem::whereIn('id', $itemIds)->where('status', '!=', 'active')->exists()
             : false;
-=======
-        foreach ($validated['items'] as $line) {
-            if (empty($line['item_id']) && empty($line['item_name'])) {
-                return response()->json(['message' => 'Each line item must select an item or input item name.'], 422);
-            }
-        }
-
-        $selectedItemIds = collect($validated['items'])->pluck('item_id')->filter()->values();
-        $inactiveItems = MasterItem::whereIn('id', $selectedItemIds)->where('status', '!=', 'active')->exists();
->>>>>>> f1b7b55244731bd9c8ab115dfb82ddb1dd381f2a
         if ($inactiveItems) {
             return response()->json(['message' => 'All items must have ACTIVE status.'], 422);
         }
@@ -102,11 +87,7 @@ class MaterialRequestController extends Controller
                 MrLineItem::create([
                     'mr_id' => $mr->id,
                     'item_id' => $item['item_id'] ?? null,
-<<<<<<< HEAD
-                    'item_name' => $item['item_name'] ?? null,
-=======
                     'item_name' => $itemModel?->name ?? ($item['item_name'] ?? null),
->>>>>>> f1b7b55244731bd9c8ab115dfb82ddb1dd381f2a
                     'qty' => $item['qty'],
                     'unit' => $item['unit'],
                     'description' => $item['description'] ?? null,
@@ -292,11 +273,7 @@ class MaterialRequestController extends Controller
                 $resolvedItemName = $item->item?->name ?? $item->item_name ?? 'N/A';
                 PrLineItem::create([
                     'pr_id' => $pr->id,
-<<<<<<< HEAD
                     'item_name' => $resolvedItemName,
-=======
-                    'item_name' => $item->item->name ?? $item->item_name ?? 'Manual Item',
->>>>>>> f1b7b55244731bd9c8ab115dfb82ddb1dd381f2a
                     'qty' => $item->qty,
                     'unit' => $item->unit,
                     'description' => $item->description,
