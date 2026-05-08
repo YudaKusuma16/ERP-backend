@@ -13,6 +13,7 @@ class MaterialRequest extends Model
         'number',
         'date',
         'source_type',
+        'wo_id',
         'requestor_id',
         'department_id',
         'notes',
@@ -30,6 +31,11 @@ class MaterialRequest extends Model
     public function requestor()
     {
         return $this->belongsTo(User::class, 'requestor_id');
+    }
+
+    public function workOrder()
+    {
+        return $this->belongsTo(WorkOrder::class, 'wo_id');
     }
 
     public function department()

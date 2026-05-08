@@ -16,6 +16,7 @@ class MasterItem extends Model
         'category',
         'asset_code',
         'coa',
+        'location',
         'status',
         'created_by',
         'validated_by',

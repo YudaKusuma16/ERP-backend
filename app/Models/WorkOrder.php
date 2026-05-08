@@ -14,6 +14,7 @@ class WorkOrder extends Model
     protected $fillable = [
         'number',
         'date',
+        'orf_id',
         'orf_ref',
         'job_details',
         'pic_id',
@@ -40,6 +41,16 @@ class WorkOrder extends Model
     public function acceptanceLetter()
     {
         return $this->hasOne(AcceptanceLetter::class, 'wo_id');
+    }
+
+    public function orderRequestForm()
+    {
+        return $this->belongsTo(OrderRequestForm::class, 'orf_id');
+    }
+
+    public function materialRequests()
+    {
+        return $this->hasMany(MaterialRequest::class, 'wo_id');
     }
 
     public function approvalLogs()

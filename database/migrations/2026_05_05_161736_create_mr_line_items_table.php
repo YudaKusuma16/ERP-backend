@@ -11,7 +11,8 @@ return new class extends Migration
         Schema::create('mr_line_items', function (Blueprint $table) {
             $table->id();
             $table->foreignId('mr_id')->constrained('material_requests')->cascadeOnDelete();
-            $table->foreignId('item_id')->constrained('master_items')->cascadeOnDelete();
+            $table->foreignId('item_id')->nullable()->constrained('master_items')->nullOnDelete();
+            $table->string('item_name')->nullable();
             $table->decimal('qty', 15, 2)->default(0);
             $table->string('unit');
             $table->text('description')->nullable();
@@ -21,6 +22,7 @@ return new class extends Migration
 
             $table->index('mr_id');
             $table->index('item_id');
+            $table->index('item_name');
         });
     }
 

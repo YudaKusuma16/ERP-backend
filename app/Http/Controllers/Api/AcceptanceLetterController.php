@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AcceptanceLetter;
 use App\Models\AlLineItem;
+use App\Models\MasterItem;
 use App\Services\AuditTrailService;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
@@ -42,7 +43,7 @@ class AcceptanceLetterController extends Controller
 
     public function addLineItems(Request $request, AcceptanceLetter $acceptanceLetter): JsonResponse
     {
-        if (!in_array($acceptanceLetter->status, ['auto_created', 'pending_approval'])) {
+        if (!in_array($acceptanceLetter->status, ['auto_created', 'pending_approval', 'approved'])) {
             return response()->json(['message' => 'Cannot add line items in current status.'], 422);
         }
 
@@ -78,8 +79,8 @@ class AcceptanceLetterController extends Controller
 
     public function updateLineItems(Request $request, AcceptanceLetter $acceptanceLetter): JsonResponse
     {
-        if ($acceptanceLetter->status !== 'in_progress') {
-            return response()->json(['message' => 'Line items can only be updated when AL is in progress.'], 422);
+        if (!in_array($acceptanceLetter->status, ['approved', 'in_progress'])) {
+            return response()->json(['message' => 'Line items can only be updated when AL is approved or in progress.'], 422);
         }
 
         $validated = $request->validate([
@@ -132,8 +133,33 @@ class AcceptanceLetterController extends Controller
         }
 
         if ($acceptanceLetter->status === 'in_progress') {
+            $lineItems = $acceptanceLetter->lineItems()->get();
+            if ($lineItems->isEmpty()) {
+                return response()->json(['message' => 'Cannot complete AL without line items.'], 422);
+            }
+
+            $missingLocation = $lineItems
+                ->filter(fn ($li) => in_array($li->item_status, ['terpasang', 'ex_remote']))
+                ->first(fn ($li) => empty($li->location));
+            if ($missingLocation) {
+                return response()->json(['message' => 'Location is required for Terpasang / Ex Remote items before completing.'], 422);
+            }
+
+            // Update master item location when available.
+            foreach ($lineItems as $li) {
+                if (!$li->item_id) {
+                    continue;
+                }
+                if ($li->item_status === 'tidak_jadi') {
+                    continue;
+                }
+                MasterItem::whereKey($li->item_id)->update([
+                    'location' => $li->location,
+                ]);
+            }
+
             $acceptanceLetter->update(['status' => 'completed']);
-            $this->auditTrail->log('al', $acceptanceLetter->id, $request->user()->id, 'in_progress', 'completed', 'AL completed');
+            $this->auditTrail->log('al', $acceptanceLetter->id, $request->user()->id, 'in_progress', 'completed', 'AL completed (item locations updated)');
 
             $this->notificationService->notify(
                 $acceptanceLetter->workOrder->created_by,

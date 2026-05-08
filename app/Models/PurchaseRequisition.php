@@ -29,12 +29,12 @@ class PurchaseRequisition extends Model
 
     public function sourceMr()
     {
-        return $this->belongsTo(MaterialRequest::class, 'source_id')->where('source_type', 'mr');
+        return $this->belongsTo(MaterialRequest::class, 'source_id');
     }
 
     public function sourceSr()
     {
-        return $this->belongsTo(ServiceRequest::class, 'source_id')->where('source_type', 'sr');
+        return $this->belongsTo(ServiceRequest::class, 'source_id');
     }
 
     public function source()

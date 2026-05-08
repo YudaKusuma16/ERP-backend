@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\MasterItemController;
 use App\Http\Controllers\Api\MaterialRequestController;
 use App\Http\Controllers\Api\MasterVendorController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\OrderRequestFormController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\PurchaseRequisitionController;
 use App\Http\Controllers\Api\PreReceivingDocumentController;
@@ -81,9 +82,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('receiving-documents/{receivingDocument}/input-serial-numbers', [ReceivingDocumentController::class, 'inputSerialNumbers']);
     Route::post('receiving-documents/{receivingDocument}/approve', [ReceivingDocumentController::class, 'approve']);
 
+    Route::apiResource('order-request-forms', OrderRequestFormController::class);
+    Route::post('order-request-forms/{orderRequestForm}/submit', [OrderRequestFormController::class, 'submit']);
+    Route::post('order-request-forms/{orderRequestForm}/approve', [OrderRequestFormController::class, 'approve']);
+
     Route::apiResource('work-orders', WorkOrderController::class);
     Route::post('work-orders/{workOrder}/submit', [WorkOrderController::class, 'submitForApproval']);
     Route::post('work-orders/{workOrder}/approve', [WorkOrderController::class, 'approve']);
+    Route::post('work-orders/{workOrder}/material-requests', [WorkOrderController::class, 'createMaterialRequest']);
 
     Route::apiResource('acceptance-letters', AcceptanceLetterController::class);
     Route::post('acceptance-letters/{acceptanceLetter}/add-line-items', [AcceptanceLetterController::class, 'addLineItems']);

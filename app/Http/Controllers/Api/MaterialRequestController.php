@@ -50,17 +50,20 @@ class MaterialRequestController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'source_type' => 'required|in:internal,asset,customer,project_internal',
+            'source_type' => 'required|in:internal,asset,customer,project_internal,wo,so,transfer',
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|exists:master_items,id',
+            'items.*.item_id' => 'nullable|exists:master_items,id',
+            'items.*.item_name' => 'required_without:items.*.item_id|string|max:255',
             'items.*.qty' => 'required|numeric|min:0.01',
             'items.*.unit' => 'required|string',
             'items.*.description' => 'nullable|string',
         ]);
 
-        $inactiveItems = MasterItem::whereIn('id', collect($validated['items'])->pluck('item_id'))
-            ->where('status', '!=', 'active')->exists();
+        $itemIds = collect($validated['items'])->pluck('item_id')->filter()->values();
+        $inactiveItems = $itemIds->isNotEmpty()
+            ? MasterItem::whereIn('id', $itemIds)->where('status', '!=', 'active')->exists()
+            : false;
         if ($inactiveItems) {
             return response()->json(['message' => 'All items must have ACTIVE status.'], 422);
         }
@@ -79,7 +82,8 @@ class MaterialRequestController extends Controller
             foreach ($validated['items'] as $item) {
                 MrLineItem::create([
                     'mr_id' => $mr->id,
-                    'item_id' => $item['item_id'],
+                    'item_id' => $item['item_id'] ?? null,
+                    'item_name' => $item['item_name'] ?? null,
                     'qty' => $item['qty'],
                     'unit' => $item['unit'],
                     'description' => $item['description'] ?? null,
@@ -262,9 +266,10 @@ class MaterialRequestController extends Controller
             }
 
             foreach ($flaggedItems as $item) {
+                $resolvedItemName = $item->item?->name ?? $item->item_name ?? 'N/A';
                 PrLineItem::create([
                     'pr_id' => $pr->id,
-                    'item_name' => $item->item->name,
+                    'item_name' => $resolvedItemName,
                     'qty' => $item->qty,
                     'unit' => $item->unit,
                     'description' => $item->description,

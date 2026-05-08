@@ -4,19 +4,23 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ApprovalTier;
+use App\Models\DeliveryInstruction;
 use App\Models\PurchaseRequisition;
 use App\Models\PrLineItem;
 use App\Services\AuditTrailService;
+use App\Services\DocumentNumberingService;
 use App\Services\NotificationService;
 use App\Services\WorkflowEngine;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PurchaseRequisitionController extends Controller
 {
     public function __construct(
         private AuditTrailService $auditTrail,
         private NotificationService $notificationService,
+        private DocumentNumberingService $docNumbering,
         private WorkflowEngine $workflow,
     ) {}
 
@@ -133,22 +137,53 @@ class PurchaseRequisitionController extends Controller
         $newTier = $purchaseRequisition->current_tier + 1;
 
         if ($newTier >= $purchaseRequisition->tier_count) {
-            $fromStatus = $purchaseRequisition->status;
-            $purchaseRequisition->update([
-                'status' => 'forwarded_to_p3',
-                'current_tier' => $newTier,
-            ]);
+            DB::transaction(function () use ($purchaseRequisition, $request, $newTier) {
+                $fromStatus = $purchaseRequisition->status;
+                $purchaseRequisition->update([
+                    'status' => 'forwarded_to_p3',
+                    'current_tier' => $newTier,
+                ]);
 
-            $this->auditTrail->log('pr', $purchaseRequisition->id, $request->user()->id, $fromStatus, 'forwarded_to_p3', 'PR fully approved by Pihak II (all tiers)');
+                $this->auditTrail->log('pr', $purchaseRequisition->id, $request->user()->id, $fromStatus, 'forwarded_to_p3', 'PR fully approved by Pihak II (all tiers)');
 
-            $this->notificationService->notifyUsersWithRole(
-                'purchasing',
-                'pr_approved',
-                'PR Approved - Ready for PO',
-                "PR {$purchaseRequisition->number} has been fully approved. Ready for PO creation.",
-                'pr',
-                $purchaseRequisition->id
-            );
+                $this->notificationService->notifyUsersWithRole(
+                    'purchasing',
+                    'pr_approved',
+                    'PR Approved - Ready for PO',
+                    "PR {$purchaseRequisition->number} has been fully approved. Ready for PO creation.",
+                    'pr',
+                    $purchaseRequisition->id
+                );
+
+                // If PR comes from MR, create (or reuse) a DI for that MR.
+                if ($purchaseRequisition->source_type === 'mr') {
+                    $mr = $purchaseRequisition->source();
+                    if ($mr) {
+                        $existingDi = DeliveryInstruction::where('mr_id', $mr->id)->orderBy('id', 'desc')->first();
+                        if (!$existingDi) {
+                            $di = DeliveryInstruction::create([
+                                'number' => $this->docNumbering->generate('di'),
+                                'date' => now()->toDateString(),
+                                'mr_id' => $mr->id,
+                                'warehouse_id' => null,
+                                'status' => 'draft',
+                                'created_by' => $request->user()->id,
+                            ]);
+
+                            $this->auditTrail->log('di', $di->id, $request->user()->id, 'created', 'draft', 'DI created from PR ' . $purchaseRequisition->number);
+
+                            $this->notificationService->notifyUsersWithRole(
+                                'log',
+                                'di_created',
+                                'Delivery Instruction Created',
+                                "DI {$di->number} created from PR {$purchaseRequisition->number}.",
+                                'di',
+                                $di->id
+                            );
+                        }
+                    }
+                }
+            });
         } else {
             $purchaseRequisition->update(['current_tier' => $newTier]);
             $this->auditTrail->log('pr', $purchaseRequisition->id, $request->user()->id, 'pending_pihak_ii', 'pending_pihak_ii', "Pihak II Tier {$newTier}/{$purchaseRequisition->tier_count} approved");

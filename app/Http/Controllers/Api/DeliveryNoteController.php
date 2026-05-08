@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AcceptanceLetter;
+use App\Models\AlLineItem;
 use App\Models\DeliveryInstruction;
 use App\Models\DeliveryNote;
+use App\Models\MaterialRequest;
 use App\Services\AuditTrailService;
 use App\Services\DocumentNumberingService;
 use Illuminate\Http\JsonResponse;
@@ -69,7 +72,7 @@ class DeliveryNoteController extends Controller
     public function show(DeliveryNote $deliveryNote): JsonResponse
     {
         return response()->json([
-            'delivery_note' => $deliveryNote->load('deliveryInstruction.materialRequest.requestor', 'creator', 'approvalLogs.actor'),
+            'delivery_note' => $deliveryNote->load('deliveryInstruction.materialRequest.requestor', 'deliveryInstruction.materialRequest.lineItems.item', 'creator', 'approvalLogs.actor'),
         ]);
     }
 
@@ -94,9 +97,60 @@ class DeliveryNoteController extends Controller
             return response()->json(['message' => 'DN must be in draft status to dispatch.'], 422);
         }
 
-        $deliveryNote->update(['status' => 'dispatched']);
-        $this->auditTrail->log('dn', $deliveryNote->id, request()->user()->id, 'draft', 'dispatched', 'DN dispatched');
+        return DB::transaction(function () use ($deliveryNote) {
+            $userId = request()->user()->id;
 
-        return response()->json(['message' => 'Delivery Note dispatched.', 'delivery_note' => $deliveryNote->fresh()]);
+            $deliveryNote->update(['status' => 'dispatched']);
+            $this->auditTrail->log('dn', $deliveryNote->id, $userId, 'draft', 'dispatched', 'DN dispatched');
+
+            $deliveryNote->loadMissing('deliveryInstruction.materialRequest.workOrder.acceptanceLetter');
+            $wo = $deliveryNote->deliveryInstruction?->materialRequest?->workOrder;
+            $al = $wo?->acceptanceLetter;
+            $mr = $deliveryNote->deliveryInstruction?->materialRequest;
+
+            // Ensure AL exists and becomes visible after DN dispatched.
+            if ($wo && !$al) {
+                $al = AcceptanceLetter::create([
+                    'number' => $this->docNumbering->generate('al'),
+                    'date' => now()->toDateString(),
+                    'wo_id' => $wo->id,
+                    'status' => 'pending_approval',
+                    'created_by' => $userId,
+                ]);
+                $this->auditTrail->log('al', $al->id, $userId, 'created', 'pending_approval', 'AL created after DN dispatched: ' . $deliveryNote->number);
+
+                if ($wo->status !== 'al_generated') {
+                    $woFrom = $wo->status;
+                    $wo->update(['status' => 'al_generated']);
+                    $this->auditTrail->log('wo', $wo->id, $userId, $woFrom, 'al_generated', 'AL generated after DN dispatched: ' . $al->number);
+                }
+            } elseif ($al && $al->status === 'auto_created') {
+                $fromStatus = $al->status;
+                $al->update(['status' => 'pending_approval']);
+                $this->auditTrail->log('al', $al->id, $userId, $fromStatus, 'pending_approval', 'AL moved to pending approval after DN dispatched: ' . $deliveryNote->number);
+            }
+
+            // Auto-fill AL line items from MR once (so AL doesn't require re-input).
+            if ($al && $mr && $al->lineItems()->count() === 0) {
+                $mrItems = $mr->lineItems()->with('item')->get();
+                foreach ($mrItems as $mri) {
+                    $resolvedName = $mri->item?->name ?? $mri->item_name ?? 'N/A';
+                    AlLineItem::create([
+                        'al_id' => $al->id,
+                        'item_id' => $mri->item_id,
+                        'item_name' => $resolvedName,
+                        'item_status' => 'terpasang',
+                        'location' => null,
+                    ]);
+                }
+                $this->auditTrail->log('al', $al->id, $userId, 'pending_approval', 'pending_approval', 'AL line items auto-filled from MR ' . $mr->number);
+            }
+
+            return response()->json([
+                'message' => 'Delivery Note dispatched.',
+                'delivery_note' => $deliveryNote->fresh()->load('deliveryInstruction.materialRequest.workOrder.acceptanceLetter'),
+                'acceptance_letter' => $al ? AcceptanceLetter::with('workOrder.pic', 'creator')->find($al->id) : null,
+            ]);
+        });
     }
 }

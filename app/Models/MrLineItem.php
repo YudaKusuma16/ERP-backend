@@ -9,6 +9,7 @@ class MrLineItem extends Model
     protected $fillable = [
         'mr_id',
         'item_id',
+        'item_name',
         'qty',
         'unit',
         'description',

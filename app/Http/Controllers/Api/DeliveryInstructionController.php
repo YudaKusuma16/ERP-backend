@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryInstruction;
+use App\Models\DeliveryNote;
 use App\Services\AuditTrailService;
 use App\Services\DocumentNumberingService;
 use App\Services\NotificationService;
@@ -68,7 +69,7 @@ class DeliveryInstructionController extends Controller
     public function show(DeliveryInstruction $deliveryInstruction): JsonResponse
     {
         return response()->json([
-            'delivery_instruction' => $deliveryInstruction->load('materialRequest.requestor', 'creator', 'deliveryNote', 'approvalLogs.actor'),
+            'delivery_instruction' => $deliveryInstruction->load('materialRequest.requestor', 'materialRequest.lineItems.item', 'creator', 'deliveryNote', 'approvalLogs.actor'),
         ]);
     }
 
@@ -92,9 +93,32 @@ class DeliveryInstructionController extends Controller
             return response()->json(['message' => 'DI must be in draft status to issue.'], 422);
         }
 
-        $deliveryInstruction->update(['status' => 'issued']);
-        $this->auditTrail->log('di', $deliveryInstruction->id, request()->user()->id, 'draft', 'issued', 'DI issued');
+        return DB::transaction(function () use ($deliveryInstruction) {
+            $userId = request()->user()->id;
 
-        return response()->json(['message' => 'Delivery Instruction issued.', 'delivery_instruction' => $deliveryInstruction->fresh()]);
+            $deliveryInstruction->update(['status' => 'issued']);
+            $this->auditTrail->log('di', $deliveryInstruction->id, $userId, 'draft', 'issued', 'DI issued');
+
+            $dn = DeliveryNote::where('di_id', $deliveryInstruction->id)->orderBy('id', 'desc')->first();
+            if (!$dn) {
+                $dn = DeliveryNote::create([
+                    'number' => $this->docNumbering->generate('dn'),
+                    'date' => now()->toDateString(),
+                    'di_id' => $deliveryInstruction->id,
+                    'driver' => null,
+                    'vehicle' => null,
+                    'status' => 'draft',
+                    'created_by' => $userId,
+                ]);
+
+                $this->auditTrail->log('dn', $dn->id, $userId, 'created', 'draft', 'DN auto-created from issued DI ' . $deliveryInstruction->number);
+            }
+
+            return response()->json([
+                'message' => 'Delivery Instruction issued. Delivery Note created.',
+                'delivery_instruction' => $deliveryInstruction->fresh()->load('deliveryNote'),
+                'delivery_note' => $dn->fresh()->load('deliveryInstruction', 'creator'),
+            ]);
+        });
     }
 }
