@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderRequestFormController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\PurchaseRequisitionController;
+use App\Http\Controllers\Api\SalesOrderController;
 use App\Http\Controllers\Api\PreReceivingDocumentController;
 use App\Http\Controllers\Api\ReceivingDocumentController;
 use App\Http\Controllers\Api\ReportController;
@@ -90,6 +91,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('order-request-forms', OrderRequestFormController::class);
     Route::post('order-request-forms/{orderRequestForm}/submit', [OrderRequestFormController::class, 'submit']);
     Route::post('order-request-forms/{orderRequestForm}/approve', [OrderRequestFormController::class, 'approve']);
+
+    Route::apiResource('sales-orders', SalesOrderController::class);
+    Route::post('sales-orders/{salesOrder}/submit', [SalesOrderController::class, 'submit']);
+    Route::post('sales-orders/{salesOrder}/approve', [SalesOrderController::class, 'approve']);
+    Route::post('sales-orders/{salesOrder}/material-requests', [SalesOrderController::class, 'createMaterialRequest']);
 
     Route::apiResource('work-orders', WorkOrderController::class);
     Route::post('work-orders/{workOrder}/submit', [WorkOrderController::class, 'submitForApproval']);

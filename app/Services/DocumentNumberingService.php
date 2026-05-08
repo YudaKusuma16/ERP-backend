@@ -10,6 +10,7 @@ class DocumentNumberingService
     {
         $prefixMap = [
             'orf' => 'ORF',
+            'so' => 'SO',
             'mr' => 'MR',
             'sr' => 'SR',
             'pr' => 'PR',

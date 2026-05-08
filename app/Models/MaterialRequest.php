@@ -14,6 +14,7 @@ class MaterialRequest extends Model
         'date',
         'source_type',
         'wo_id',
+        'so_id',
         'requestor_id',
         'department_id',
         'notes',
@@ -36,6 +37,11 @@ class MaterialRequest extends Model
     public function workOrder()
     {
         return $this->belongsTo(WorkOrder::class, 'wo_id');
+    }
+
+    public function salesOrder()
+    {
+        return $this->belongsTo(SalesOrder::class, 'so_id');
     }
 
     public function department()

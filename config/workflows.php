@@ -8,6 +8,12 @@ return [
             'approved' => [],
             'declined' => ['draft'],
         ],
+        'so' => [
+            'draft' => ['submitted'],
+            'submitted' => ['approved', 'declined'],
+            'approved' => [],
+            'declined' => ['draft'],
+        ],
         'master_item' => [
             'inactive' => ['pending_accounting'],
             'pending_accounting' => ['active', 'declined'],
