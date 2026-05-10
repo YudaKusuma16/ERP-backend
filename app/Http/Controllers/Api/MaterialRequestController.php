@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\DeliveryInstruction;
 use App\Models\MasterItem;
 use App\Models\MaterialRequest;
 use App\Models\MrLineItem;
 use App\Models\PurchaseRequisition;
 use App\Models\PrLineItem;
 use App\Services\AuditTrailService;
+use App\Services\DeliveryInstructionFromPrService;
 use App\Services\DocumentNumberingService;
 use App\Services\NotificationService;
 use App\Services\WorkflowEngine;
@@ -23,6 +25,7 @@ class MaterialRequestController extends Controller
         private AuditTrailService $auditTrail,
         private NotificationService $notificationService,
         private WorkflowEngine $workflow,
+        private DeliveryInstructionFromPrService $deliveryInstructionFromPr,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -114,8 +117,29 @@ class MaterialRequestController extends Controller
 
     public function show(MaterialRequest $materialRequest): JsonResponse
     {
+        if ($materialRequest->pr_id && $materialRequest->createsDeliveryInstructionAfterPrApproval()) {
+            $purchaseRequisition = PurchaseRequisition::find($materialRequest->pr_id);
+            if (
+                $purchaseRequisition
+                && $purchaseRequisition->status === 'forwarded_to_p3'
+                && $purchaseRequisition->source_type === 'mr'
+                && (int) $purchaseRequisition->source_id === (int) $materialRequest->id
+            ) {
+                $actorId = (int) request()->user()->id;
+                DB::transaction(function () use ($purchaseRequisition, $materialRequest, $actorId) {
+                    $purchaseRequisition->setRelation('sourceMr', $materialRequest);
+                    $this->deliveryInstructionFromPr->ensureForForwardedMrBackedDeliveryPr(
+                        $purchaseRequisition,
+                        $actorId,
+                        false
+                    );
+                });
+                $materialRequest->unsetRelation('deliveryInstruction');
+            }
+        }
+
         return response()->json([
-            'mr' => $materialRequest->load('lineItems.item', 'requestor', 'department', 'approvedByDeptHead', 'approvedByPihak2', 'approvalLogs.actor'),
+            'mr' => $materialRequest->fresh()->load('lineItems.item', 'requestor', 'department', 'approvedByDeptHead', 'approvedByPihak2', 'approvalLogs.actor', 'deliveryInstruction', 'workOrder', 'salesOrder'),
         ]);
     }
 
@@ -152,6 +176,10 @@ class MaterialRequestController extends Controller
 
         if ($materialRequest->isFlowB()) {
             return $this->approveAndGeneratePR($materialRequest, $request);
+        }
+
+        if ($materialRequest->skipsPurchaseRequisition()) {
+            return $this->approveForOutboundDelivery($materialRequest, $request);
         }
 
         $materialRequest->update([
@@ -208,9 +236,11 @@ class MaterialRequestController extends Controller
             return response()->json(['message' => 'MR is not pending Pihak II approval.'], 422);
         }
 
-        $hasFlaggedItems = $materialRequest->lineItems()->where('flagged', true)->exists();
-        if (!$hasFlaggedItems) {
-            return response()->json(['message' => 'Please flag at least one item before approving.'], 422);
+        if (!$materialRequest->skipsPurchaseRequisition()) {
+            $hasFlaggedItems = $materialRequest->lineItems()->where('flagged', true)->exists();
+            if (!$hasFlaggedItems) {
+                return response()->json(['message' => 'Please flag at least one item before approving.'], 422);
+            }
         }
 
         $validated = $request->validate([
@@ -234,7 +264,82 @@ class MaterialRequestController extends Controller
             return response()->json(['message' => 'MR declined by Pihak II.', 'mr' => $materialRequest->fresh()]);
         }
 
+        if ($materialRequest->skipsPurchaseRequisition()) {
+            return $this->approveForOutboundDelivery($materialRequest, $request, true);
+        }
+
         return $this->approveAndGeneratePR($materialRequest, $request, true);
+    }
+
+    private function approveForOutboundDelivery(MaterialRequest $materialRequest, Request $request, bool $isPihak2 = false): JsonResponse
+    {
+        return DB::transaction(function () use ($materialRequest, $request, $isPihak2) {
+            if (!$isPihak2) {
+                $materialRequest->update([
+                    'status' => 'approved',
+                    'approved_by_dept_head' => $request->user()->id,
+                ]);
+            } else {
+                $materialRequest->update([
+                    'status' => 'approved',
+                    'approved_by_pihak2' => $request->user()->id,
+                ]);
+            }
+
+            $fromStatus = $isPihak2 ? 'pending_pihak_ii' : 'pending_dept_head';
+            $this->auditTrail->log('mr', $materialRequest->id, $request->user()->id, $fromStatus, 'approved', $isPihak2 ? 'Outbound MR approved by Pihak II (no PR)' : 'Outbound MR approved by Dept Head (no PR)');
+
+            $di = $this->ensureDeliveryInstructionForOutboundMr($materialRequest, $request->user()->id);
+
+            $this->notificationService->notify(
+                $materialRequest->requestor_id,
+                'mr_approved',
+                'MR Approved — Delivery Instruction',
+                $di
+                    ? "MR {$materialRequest->number} approved. DI {$di->number} created (draft)."
+                    : "MR {$materialRequest->number} approved (no PR).",
+                'mr',
+                $materialRequest->id
+            );
+
+            return response()->json([
+                'message' => $di
+                    ? 'MR approved. Delivery Instruction created (draft). No Purchase Requisition.'
+                    : 'MR approved. No Purchase Requisition.',
+                'mr' => $materialRequest->fresh()->load('lineItems.item', 'requestor', 'department', 'workOrder', 'salesOrder', 'deliveryInstruction'),
+                'delivery_instruction' => $di,
+            ]);
+        });
+    }
+
+    private function ensureDeliveryInstructionForOutboundMr(MaterialRequest $materialRequest, int $actorUserId): ?DeliveryInstruction
+    {
+        $existing = DeliveryInstruction::where('mr_id', $materialRequest->id)->orderBy('id', 'desc')->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        $di = DeliveryInstruction::create([
+            'number' => $this->docNumbering->generate('di'),
+            'date' => now()->toDateString(),
+            'mr_id' => $materialRequest->id,
+            'warehouse_id' => null,
+            'status' => 'draft',
+            'created_by' => $actorUserId,
+        ]);
+
+        $this->auditTrail->log('di', $di->id, $actorUserId, 'created', 'draft', 'DI auto-created from MR ' . $materialRequest->number . ' ('.$materialRequest->source_type.')');
+
+        $this->notificationService->notifyUsersWithRole(
+            'log',
+            'di_created',
+            'Delivery Instruction Created',
+            "DI {$di->number} created from MR {$materialRequest->number}.",
+            'di',
+            $di->id
+        );
+
+        return $di;
     }
 
     private function approveAndGeneratePR(MaterialRequest $materialRequest, Request $request, bool $isPihak2 = false): JsonResponse
@@ -313,8 +418,8 @@ class MaterialRequestController extends Controller
     private function getPihak2Role(string $sourceType): string
     {
         return match ($sourceType) {
-            'internal', 'asset' => 'ga',
-            'customer' => 'log',
+            'internal' => 'ga',
+            'customer', 'so', 'wo' => 'log',
             default => 'log',
         };
     }

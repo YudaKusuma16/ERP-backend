@@ -22,13 +22,26 @@ class DeliveryInstructionController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = DeliveryInstruction::with('materialRequest', 'creator', 'deliveryNote');
+        $query = DeliveryInstruction::with([
+            'materialRequest',
+            'purchaseRequisition.sourceSr',
+            'creator',
+            'deliveryNote',
+        ]);
 
         if ($request->has('status')) {
             $query->byStatus($request->status);
         }
         if ($request->has('search')) {
             $query->where('number', 'like', '%' . $request->search . '%');
+        }
+
+        if ($request->filled('source')) {
+            if ($request->source === 'mr') {
+                $query->whereNotNull('mr_id');
+            } elseif ($request->source === 'sr') {
+                $query->whereNotNull('pr_id');
+            }
         }
 
         $dis = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 20);
@@ -61,7 +74,7 @@ class DeliveryInstructionController extends Controller
 
             return response()->json([
                 'message' => 'Delivery Instruction created successfully.',
-                'delivery_instruction' => $di->load('materialRequest', 'creator'),
+                'delivery_instruction' => $di->load('materialRequest', 'purchaseRequisition.sourceSr', 'creator'),
             ], 201);
         });
     }
@@ -69,7 +82,15 @@ class DeliveryInstructionController extends Controller
     public function show(DeliveryInstruction $deliveryInstruction): JsonResponse
     {
         return response()->json([
-            'delivery_instruction' => $deliveryInstruction->load('materialRequest.requestor', 'materialRequest.lineItems.item', 'creator', 'deliveryNote', 'approvalLogs.actor'),
+            'delivery_instruction' => $deliveryInstruction->load([
+                'materialRequest.requestor',
+                'materialRequest.lineItems.item',
+                'purchaseRequisition.sourceSr',
+                'purchaseRequisition.lineItems',
+                'creator',
+                'deliveryNote',
+                'approvalLogs.actor',
+            ]),
         ]);
     }
 

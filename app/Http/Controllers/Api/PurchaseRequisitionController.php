@@ -4,10 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ApprovalTier;
-use App\Models\DeliveryInstruction;
 use App\Models\PurchaseRequisition;
 use App\Models\PrLineItem;
 use App\Services\AuditTrailService;
+use App\Services\DeliveryInstructionFromPrService;
 use App\Services\DocumentNumberingService;
 use App\Services\NotificationService;
 use App\Services\WorkflowEngine;
@@ -22,13 +22,28 @@ class PurchaseRequisitionController extends Controller
         private NotificationService $notificationService,
         private DocumentNumberingService $docNumbering,
         private WorkflowEngine $workflow,
+        private DeliveryInstructionFromPrService $deliveryInstructionFromPr,
     ) {}
 
     public function index(Request $request): JsonResponse
     {
         $query = PurchaseRequisition::with('sourceMr', 'sourceSr', 'lineItems', 'pihak1', 'approvalLogs.actor');
 
-        if ($request->has('status')) {
+        if ($request->boolean('for_po_creation')) {
+            $query->where('status', 'forwarded_to_p3')
+                ->whereDoesntHave('purchaseOrders')
+                ->where(function ($q) {
+                    // SR PR: butuh PO (untuk Pre-RD setelah pengiriman ke vendor).
+                    $q->where('source_type', 'sr')
+                        // MR PR pengadaan murni: tidak termasuk WO/Asset/Transfer/SO yang berakhir di DI/DN.
+                        ->orWhere(function ($q2) {
+                            $q2->where('source_type', 'mr')
+                                ->whereHas('sourceMr', function ($mrQ) {
+                                    $mrQ->whereNotIn('source_type', ['wo', 'asset', 'transfer', 'so']);
+                                });
+                        });
+                });
+        } elseif ($request->has('status')) {
             $query->byStatus($request->status);
         }
         if ($request->has('pr_type')) {
@@ -44,8 +59,15 @@ class PurchaseRequisitionController extends Controller
 
     public function show(PurchaseRequisition $purchaseRequisition): JsonResponse
     {
+        if ($purchaseRequisition->status === 'forwarded_to_p3') {
+            $actorId = (int) request()->user()->id;
+            DB::transaction(function () use ($purchaseRequisition, $actorId) {
+                $this->deliveryInstructionFromPr->ensureForForwardedPurchaseRequisition($purchaseRequisition, $actorId, false);
+            });
+        }
+
         return response()->json([
-            'pr' => $purchaseRequisition->load('lineItems', 'pihak1', 'approvalLogs.actor', 'sourceMr.lineItems.item', 'sourceSr.lineItems'),
+            'pr' => $purchaseRequisition->fresh()->load('lineItems', 'pihak1', 'approvalLogs.actor', 'sourceMr.lineItems.item', 'sourceSr.lineItems', 'deliveryInstruction.deliveryNote'),
         ]);
     }
 
@@ -150,43 +172,25 @@ class PurchaseRequisitionController extends Controller
 
                 $this->auditTrail->log('pr', $purchaseRequisition->id, $request->user()->id, $fromStatus, 'forwarded_to_p3', 'PR fully approved by Pihak II (all tiers)');
 
-                $this->notificationService->notifyUsersWithRole(
-                    'purchasing',
-                    'pr_approved',
-                    'PR Approved - Ready for PO',
-                    "PR {$purchaseRequisition->number} has been fully approved. Ready for PO creation.",
-                    'pr',
-                    $purchaseRequisition->id
-                );
+                $mrForNotify = $purchaseRequisition->source_type === 'mr' ? $purchaseRequisition->source() : null;
+                $deliveryChainAfterPr = $mrForNotify && $mrForNotify->createsDeliveryInstructionAfterPrApproval();
 
-                // If PR comes from MR, create (or reuse) a DI for that MR.
-                if ($purchaseRequisition->source_type === 'mr') {
-                    $mr = $purchaseRequisition->source();
-                    if ($mr) {
-                        $existingDi = DeliveryInstruction::where('mr_id', $mr->id)->orderBy('id', 'desc')->first();
-                        if (!$existingDi) {
-                            $di = DeliveryInstruction::create([
-                                'number' => $this->docNumbering->generate('di'),
-                                'date' => now()->toDateString(),
-                                'mr_id' => $mr->id,
-                                'warehouse_id' => null,
-                                'status' => 'draft',
-                                'created_by' => $request->user()->id,
-                            ]);
-
-                            $this->auditTrail->log('di', $di->id, $request->user()->id, 'created', 'draft', 'DI created from PR ' . $purchaseRequisition->number);
-
-                            $this->notificationService->notifyUsersWithRole(
-                                'log',
-                                'di_created',
-                                'Delivery Instruction Created',
-                                "DI {$di->number} created from PR {$purchaseRequisition->number}.",
-                                'di',
-                                $di->id
-                            );
-                        }
-                    }
+                if (!$deliveryChainAfterPr) {
+                    $this->notificationService->notifyUsersWithRole(
+                        'purchasing',
+                        'pr_approved',
+                        'PR Approved - Ready for PO',
+                        "PR {$purchaseRequisition->number} has been fully approved. Ready for PO creation.",
+                        'pr',
+                        $purchaseRequisition->id
+                    );
                 }
+
+                $this->deliveryInstructionFromPr->ensureForForwardedPurchaseRequisition(
+                    $purchaseRequisition,
+                    (int) $request->user()->id,
+                    true
+                );
             });
         } else {
             $purchaseRequisition->update(['current_tier' => $newTier]);
@@ -203,9 +207,32 @@ class PurchaseRequisitionController extends Controller
             );
         }
 
+        $prFresh = $purchaseRequisition->fresh()->load(
+            'lineItems',
+            'pihak1',
+            'deliveryInstruction.deliveryNote',
+            'sourceMr.lineItems.item',
+            'sourceSr.lineItems',
+        );
+
+        $fullyApproved = $prFresh->status === 'forwarded_to_p3';
+        $approvalMessage = "PR approved for tier {$newTier}. Additional approval tiers required.";
+        if ($fullyApproved) {
+            if ($prFresh->source_type === 'sr') {
+                $approvalMessage = 'PR fully approved. Continue with Delivery Instruction and Delivery Note.';
+            } else {
+                $mr = $prFresh->source_type === 'mr' ? $prFresh->sourceMr : null;
+                if ($mr && $mr->createsDeliveryInstructionAfterPrApproval()) {
+                    $approvalMessage = 'PR fully approved. Continue with Delivery Instruction and Delivery Note (no Purchase Order for this MR).';
+                } else {
+                    $approvalMessage = 'PR fully approved and forwarded to Purchasing.';
+                }
+            }
+        }
+
         return response()->json([
-            'message' => $purchaseRequisition->status === 'forwarded_to_p3' ? 'PR fully approved and forwarded to Purchasing.' : "PR approved for tier {$newTier}. Additional approval tiers required.",
-            'pr' => $purchaseRequisition->fresh()->load('lineItems', 'pihak1'),
+            'message' => $approvalMessage,
+            'pr' => $prFresh,
         ]);
     }
 }

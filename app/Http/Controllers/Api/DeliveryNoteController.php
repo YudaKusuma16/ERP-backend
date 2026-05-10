@@ -23,7 +23,11 @@ class DeliveryNoteController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = DeliveryNote::with('deliveryInstruction.materialRequest', 'creator');
+        $query = DeliveryNote::with([
+            'deliveryInstruction.materialRequest',
+            'deliveryInstruction.purchaseRequisition.sourceSr',
+            'creator',
+        ]);
 
         if ($request->has('status')) {
             $query->byStatus($request->status);
@@ -72,7 +76,14 @@ class DeliveryNoteController extends Controller
     public function show(DeliveryNote $deliveryNote): JsonResponse
     {
         return response()->json([
-            'delivery_note' => $deliveryNote->load('deliveryInstruction.materialRequest.requestor', 'deliveryInstruction.materialRequest.lineItems.item', 'creator', 'approvalLogs.actor'),
+            'delivery_note' => $deliveryNote->load([
+                'deliveryInstruction.materialRequest.requestor',
+                'deliveryInstruction.materialRequest.lineItems.item',
+                'deliveryInstruction.purchaseRequisition.sourceSr',
+                'deliveryInstruction.purchaseRequisition.lineItems',
+                'creator',
+                'approvalLogs.actor',
+            ]),
         ]);
     }
 

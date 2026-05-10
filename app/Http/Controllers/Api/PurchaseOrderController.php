@@ -36,6 +36,9 @@ class PurchaseOrderController extends Controller
         if ($request->has('search')) {
             $query->where('number', 'like', '%' . $request->search . '%');
         }
+        if ($request->filled('pr_id')) {
+            $query->where('pr_id', $request->pr_id);
+        }
 
         $pos = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 20);
         return response()->json($pos);

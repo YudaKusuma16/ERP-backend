@@ -15,6 +15,7 @@ class PreReceivingDocument extends Model
         'number',
         'date',
         'po_id',
+        'dn_id',
         'pihak1_id',
         'status',
         'notes',
@@ -27,6 +28,11 @@ class PreReceivingDocument extends Model
     public function purchaseOrder()
     {
         return $this->belongsTo(PurchaseOrder::class, 'po_id');
+    }
+
+    public function deliveryNote()
+    {
+        return $this->belongsTo(DeliveryNote::class, 'dn_id');
     }
 
     public function pihak1()

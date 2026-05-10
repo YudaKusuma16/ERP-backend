@@ -50,9 +50,19 @@ class PurchaseRequisition extends Model
         return $this->hasMany(PrLineItem::class, 'pr_id');
     }
 
+    public function deliveryInstruction()
+    {
+        return $this->hasOne(DeliveryInstruction::class, 'pr_id');
+    }
+
     public function pihak1()
     {
         return $this->belongsTo(User::class, 'pihak1_id');
+    }
+
+    public function purchaseOrders()
+    {
+        return $this->hasMany(PurchaseOrder::class, 'pr_id');
     }
 
     public function approvalLogs()

@@ -45,6 +45,11 @@ class DeliveryNote extends Model
         return $this->hasOne(Rrv::class, 'dn_id');
     }
 
+    public function preReceivingDocuments()
+    {
+        return $this->hasMany(PreReceivingDocument::class, 'dn_id');
+    }
+
     public function scopeByStatus($query, string $status)
     {
         return $query->where('status', $status);

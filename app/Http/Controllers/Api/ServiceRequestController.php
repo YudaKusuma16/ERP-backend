@@ -105,7 +105,16 @@ class ServiceRequestController extends Controller
     public function show(ServiceRequest $serviceRequest): JsonResponse
     {
         return response()->json([
-            'sr' => $serviceRequest->load('lineItems', 'requestor', 'department', 'approvedByDeptHead', 'approvedByPihak2', 'approvalLogs.actor'),
+            'sr' => $serviceRequest->load([
+                'lineItems',
+                'requestor',
+                'department',
+                'approvedByDeptHead',
+                'approvedByPihak2',
+                'approvalLogs.actor',
+                'purchaseRequisition.deliveryInstruction.deliveryNote',
+                'deliveryInstruction.deliveryNote',
+            ]),
         ]);
     }
 

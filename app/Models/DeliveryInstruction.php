@@ -15,6 +15,7 @@ class DeliveryInstruction extends Model
         'number',
         'date',
         'mr_id',
+        'pr_id',
         'warehouse_id',
         'status',
         'created_by',
@@ -27,6 +28,11 @@ class DeliveryInstruction extends Model
     public function materialRequest()
     {
         return $this->belongsTo(MaterialRequest::class, 'mr_id');
+    }
+
+    public function purchaseRequisition()
+    {
+        return $this->belongsTo(PurchaseRequisition::class, 'pr_id');
     }
 
     public function creator()
