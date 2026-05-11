@@ -9,12 +9,17 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Idempotent: pada fresh install, kondisi ini sudah benar dari create migration.
+        // Migrasi ini hanya berdampak pada DB lama yang masih punya item_id NOT NULL.
         Schema::table('mr_line_items', function (Blueprint $table) {
-            // drop existing FK first (typically mr_line_items_item_id_foreign)
-            $table->dropForeign(['item_id']);
+            try {
+                $table->dropForeign(['item_id']);
+            } catch (\Throwable $e) {
+                // ignore kalau FK belum ada
+            }
         });
 
-        // make item_id nullable (Postgres-safe without doctrine/dbal)
+        // ALTER ... DROP NOT NULL bersifat idempotent di Postgres.
         DB::statement('ALTER TABLE mr_line_items ALTER COLUMN item_id DROP NOT NULL');
 
         Schema::table('mr_line_items', function (Blueprint $table) {
@@ -25,10 +30,14 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('mr_line_items', function (Blueprint $table) {
-            $table->dropForeign(['item_id']);
+            try {
+                $table->dropForeign(['item_id']);
+            } catch (\Throwable $e) {
+                // ignore
+            }
         });
 
-        // WARNING: will fail if there are NULL item_id rows.
+        // WARNING: bisa gagal kalau ada baris dengan item_id NULL.
         DB::statement('ALTER TABLE mr_line_items ALTER COLUMN item_id SET NOT NULL');
 
         Schema::table('mr_line_items', function (Blueprint $table) {
@@ -36,4 +45,3 @@ return new class extends Migration
         });
     }
 };
-

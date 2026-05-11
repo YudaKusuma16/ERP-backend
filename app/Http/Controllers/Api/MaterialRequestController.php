@@ -418,7 +418,7 @@ class MaterialRequestController extends Controller
     private function getPihak2Role(string $sourceType): string
     {
         return match ($sourceType) {
-            'internal' => 'ga',
+            'internal', 'asset' => 'ga',
             'customer', 'so', 'wo' => 'log',
             default => 'log',
         };

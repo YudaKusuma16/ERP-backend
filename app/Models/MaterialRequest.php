@@ -81,7 +81,7 @@ class MaterialRequest extends Model
 
     public function isFlowA(): bool
     {
-        return in_array($this->source_type, ['internal', 'customer', 'so', 'wo']);
+        return in_array($this->source_type, ['internal', 'customer', 'so', 'wo', 'asset']);
     }
 
     public function isFlowB(): bool
@@ -90,12 +90,12 @@ class MaterialRequest extends Model
     }
 
     /**
-     * MR pengiriman/internal stock yang tidak melalui PR sama sekali: Asset (antar gudang), Transfer.
-     * Sales Order dan Work Order mengikuti pengadaan: Dept Head → Pihak II → PR → DI → DN.
+     * MR pengiriman murni yang tidak melalui PR sama sekali: Transfer (antar gudang).
+     * Asset, Internal, Customer, Sales Order, Work Order mengikuti pengadaan: Dept Head → Pihak II → PR.
      */
     public function skipsPurchaseRequisition(): bool
     {
-        return in_array($this->source_type, ['asset', 'transfer'], true);
+        return in_array($this->source_type, ['transfer'], true);
     }
 
     /**
@@ -109,7 +109,7 @@ class MaterialRequest extends Model
 
     public function requiresPihak2Approval(): bool
     {
-        return in_array($this->source_type, ['internal', 'customer', 'so', 'wo'], true);
+        return in_array($this->source_type, ['internal', 'customer', 'so', 'wo', 'asset'], true);
     }
 
     public function scopeByStatus($query, string $status)

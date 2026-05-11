@@ -35,11 +35,11 @@ class PurchaseRequisitionController extends Controller
                 ->where(function ($q) {
                     // SR PR: butuh PO (untuk Pre-RD setelah pengiriman ke vendor).
                     $q->where('source_type', 'sr')
-                        // MR PR pengadaan murni: tidak termasuk WO/Asset/Transfer/SO yang berakhir di DI/DN.
+                        // MR PR pengadaan: tidak termasuk WO/Transfer/SO yang berakhir di DI/DN.
                         ->orWhere(function ($q2) {
                             $q2->where('source_type', 'mr')
                                 ->whereHas('sourceMr', function ($mrQ) {
-                                    $mrQ->whereNotIn('source_type', ['wo', 'asset', 'transfer', 'so']);
+                                    $mrQ->whereNotIn('source_type', ['wo', 'transfer', 'so']);
                                 });
                         });
                 });
