@@ -57,7 +57,7 @@ class MaterialRequestController extends Controller
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'nullable|exists:master_items,id',
-            'items.*.item_name' => 'required_without:items.*.item_id|string|max:255',
+            'items.*.item_name' => 'required_without:items.*.item_id|nullable|string|max:255',
             'items.*.qty' => 'required|numeric|min:0.01',
             'items.*.unit' => 'required|string',
             'items.*.description' => 'nullable|string',
