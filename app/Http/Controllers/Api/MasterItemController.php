@@ -51,6 +51,10 @@ class MasterItemController extends Controller
             'created_by' => $request->user()->id,
         ]);
 
+        $item->update([
+            'barcode' => 'MI' . str_pad($item->id, 6, '0', STR_PAD_LEFT),
+        ]);
+
         $this->auditTrail->log('master_item', $item->id, $request->user()->id, 'inactive', 'pending_accounting', 'Item submitted for accounting validation');
 
         $this->notificationService->notifyUsersWithRole(

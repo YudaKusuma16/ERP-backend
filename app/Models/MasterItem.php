@@ -11,6 +11,7 @@ class MasterItem extends Model
 
     protected $fillable = [
         'name',
+        'barcode',
         'type',
         'unit',
         'category',
