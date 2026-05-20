@@ -12,6 +12,7 @@ use App\Models\PrLineItem;
 use App\Services\AuditTrailService;
 use App\Services\DeliveryInstructionFromPrService;
 use App\Services\DocumentNumberingService;
+use App\Services\EmailApprovalService;
 use App\Services\NotificationService;
 use App\Services\WorkflowEngine;
 use Illuminate\Http\JsonResponse;
@@ -26,6 +27,7 @@ class MaterialRequestController extends Controller
         private NotificationService $notificationService,
         private WorkflowEngine $workflow,
         private DeliveryInstructionFromPrService $deliveryInstructionFromPr,
+        private EmailApprovalService $emailApprovalService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -106,6 +108,16 @@ class MaterialRequestController extends Controller
                 "MR {$mr->number} requires your approval.",
                 'mr',
                 $mr->id
+            );
+
+            $mr->load('requestor', 'department');
+            $this->emailApprovalService->sendApprovalEmailsToRole(
+                roleCode: 'dept_head',
+                documentType: 'mr',
+                documentId: $mr->id,
+                documentNumber: $mr->number,
+                requesterName: $mr->requestor?->name,
+                department: $mr->department?->name,
             );
 
             return response()->json([
@@ -197,6 +209,16 @@ class MaterialRequestController extends Controller
             "MR {$materialRequest->number} requires your validation and flagging.",
             'mr',
             $materialRequest->id
+        );
+
+        $materialRequest->load('requestor', 'department');
+        $this->emailApprovalService->sendApprovalEmailsToRole(
+            roleCode: $pihak2Role,
+            documentType: 'mr',
+            documentId: $materialRequest->id,
+            documentNumber: $materialRequest->number,
+            requesterName: $materialRequest->requestor?->name,
+            department: $materialRequest->department?->name,
         );
 
         return response()->json([

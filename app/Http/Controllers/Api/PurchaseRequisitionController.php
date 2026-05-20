@@ -9,6 +9,7 @@ use App\Models\PrLineItem;
 use App\Services\AuditTrailService;
 use App\Services\DeliveryInstructionFromPrService;
 use App\Services\DocumentNumberingService;
+use App\Services\EmailApprovalService;
 use App\Services\NotificationService;
 use App\Services\WorkflowEngine;
 use Illuminate\Http\JsonResponse;
@@ -23,6 +24,7 @@ class PurchaseRequisitionController extends Controller
         private DocumentNumberingService $docNumbering,
         private WorkflowEngine $workflow,
         private DeliveryInstructionFromPrService $deliveryInstructionFromPr,
+        private EmailApprovalService $emailApprovalService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -119,6 +121,18 @@ class PurchaseRequisitionController extends Controller
             $purchaseRequisition->id
         );
 
+        $purchaseRequisition->load('pihak1');
+        $this->emailApprovalService->sendApprovalEmailsToRole(
+            roleCode: 'pihak_2',
+            documentType: 'pr',
+            documentId: $purchaseRequisition->id,
+            documentNumber: $purchaseRequisition->number,
+            requesterName: $purchaseRequisition->pihak1?->name,
+            totalAmount: $totalValue,
+            currentTier: 1,
+            totalTiers: $tierCount,
+        );
+
         return response()->json([
             'message' => 'Pricing input successfully. PR forwarded to Pihak II.',
             'pr' => $purchaseRequisition->fresh()->load('lineItems', 'pihak1'),
@@ -204,6 +218,18 @@ class PurchaseRequisitionController extends Controller
                 "PR {$purchaseRequisition->number} requires Pihak II Tier " . ($newTier + 1) . " approval. {$remaining} tier(s) remaining.",
                 'pr',
                 $purchaseRequisition->id
+            );
+
+            $purchaseRequisition->load('pihak1');
+            $this->emailApprovalService->sendApprovalEmailsToRole(
+                roleCode: 'pihak_2',
+                documentType: 'pr',
+                documentId: $purchaseRequisition->id,
+                documentNumber: $purchaseRequisition->number,
+                requesterName: $purchaseRequisition->pihak1?->name,
+                totalAmount: $purchaseRequisition->total_value,
+                currentTier: $newTier + 1,
+                totalTiers: $purchaseRequisition->tier_count,
             );
         }
 
