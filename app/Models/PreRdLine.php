@@ -11,6 +11,8 @@ class PreRdLine extends Model
     protected $fillable = [
         'pre_rd_id',
         'po_line_id',
+        'mr_line_id',
+        'sr_line_id',
         'item_name',
         'ordered_qty',
         'received_qty',
@@ -31,5 +33,15 @@ class PreRdLine extends Model
     public function poLineItem()
     {
         return $this->belongsTo(PoLineItem::class, 'po_line_id');
+    }
+
+    public function mrLineItem()
+    {
+        return $this->belongsTo(MrLineItem::class, 'mr_line_id');
+    }
+
+    public function srLineItem()
+    {
+        return $this->belongsTo(SrLineItem::class, 'sr_line_id');
     }
 }

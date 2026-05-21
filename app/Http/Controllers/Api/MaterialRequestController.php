@@ -119,7 +119,17 @@ class MaterialRequestController extends Controller
     public function show(MaterialRequest $materialRequest): JsonResponse
     {
         return response()->json([
-            'mr' => $materialRequest->load('lineItems.item', 'requestor', 'department', 'approvedByDeptHead', 'approvedByPihak2', 'approvalLogs.actor'),
+            'mr' => $materialRequest->load(
+                'lineItems.item',
+                'requestor',
+                'department',
+                'approvedByDeptHead',
+                'approvedByPihak2',
+                'approvalLogs.actor',
+                'deliveryInstruction.deliveryNote',
+                'preReceivingDocuments.lines',
+                'preReceivingDocuments.receivingDocument',
+            ),
         ]);
     }
 
@@ -238,7 +248,44 @@ class MaterialRequestController extends Controller
             return response()->json(['message' => 'MR declined by Pihak II.', 'mr' => $materialRequest->fresh()]);
         }
 
+        if ($materialRequest->isAssetDeliveryFlow()) {
+            return $this->approveForAssetDelivery($materialRequest, $request);
+        }
+
         return $this->approveAndGeneratePR($materialRequest, $request, true);
+    }
+
+    private function approveForAssetDelivery(MaterialRequest $materialRequest, Request $request): JsonResponse
+    {
+        return DB::transaction(function () use ($materialRequest, $request) {
+            $materialRequest->update([
+                'status' => 'approved',
+                'approved_by_pihak2' => $request->user()->id,
+            ]);
+
+            $this->auditTrail->log(
+                'mr',
+                $materialRequest->id,
+                $request->user()->id,
+                'pending_pihak_ii',
+                'approved',
+                'Asset MR approved for delivery flow (DI → DN → Pre-RD → RD)'
+            );
+
+            $this->notificationService->notify(
+                $materialRequest->requestor_id,
+                'mr_approved',
+                'Asset MR Approved',
+                "MR {$materialRequest->number} has been approved. Create Delivery Instruction next.",
+                'mr',
+                $materialRequest->id
+            );
+
+            return response()->json([
+                'message' => 'Asset MR approved. Continue with Delivery Instruction → Delivery Note → Pre-RD → RD.',
+                'mr' => $materialRequest->fresh()->load('lineItems.item', 'requestor', 'department'),
+            ]);
+        });
     }
 
     private function approveAndGeneratePR(MaterialRequest $materialRequest, Request $request, bool $isPihak2 = false): JsonResponse

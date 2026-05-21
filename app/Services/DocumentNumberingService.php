@@ -15,6 +15,8 @@ class DocumentNumberingService
             'po' => 'PO',
             'pre_rd' => 'PRE-RD',
             'rd' => 'RD',
+            'orf' => 'ORF',
+            'so' => 'SO',
             'wo' => 'WO',
             'al' => 'AL',
             'di' => 'DI',

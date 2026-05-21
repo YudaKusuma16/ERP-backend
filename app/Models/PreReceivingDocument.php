@@ -15,6 +15,8 @@ class PreReceivingDocument extends Model
         'number',
         'date',
         'po_id',
+        'mr_id',
+        'sr_id',
         'pihak1_id',
         'status',
         'notes',
@@ -27,6 +29,26 @@ class PreReceivingDocument extends Model
     public function purchaseOrder()
     {
         return $this->belongsTo(PurchaseOrder::class, 'po_id');
+    }
+
+    public function materialRequest()
+    {
+        return $this->belongsTo(MaterialRequest::class, 'mr_id');
+    }
+
+    public function serviceRequest()
+    {
+        return $this->belongsTo(ServiceRequest::class, 'sr_id');
+    }
+
+    public function isFromMaterialRequest(): bool
+    {
+        return $this->mr_id !== null;
+    }
+
+    public function isFromServiceRequest(): bool
+    {
+        return $this->sr_id !== null;
     }
 
     public function pihak1()

@@ -83,6 +83,67 @@ class ServiceRequest extends Model
         return $this->source_type === 'project';
     }
 
+    public function isVendorRepairFlow(): bool
+    {
+        return $this->source_type === '3rd_party';
+    }
+
+    public function usesProcurementFlow(): bool
+    {
+        return !$this->isVendorRepairFlow();
+    }
+
+    public function deliveryInstruction()
+    {
+        return $this->hasOne(DeliveryInstruction::class, 'sr_id');
+    }
+
+    public function preReceivingDocuments()
+    {
+        return $this->hasMany(PreReceivingDocument::class, 'sr_id');
+    }
+
+    public function hasRemainingReceivableQuantity(): bool
+    {
+        $this->loadMissing('lineItems');
+
+        if ($this->lineItems->isEmpty()) {
+            return false;
+        }
+
+        foreach ($this->lineItems as $line) {
+            $totalReceived = PreRdLine::where('sr_line_id', $line->id)
+                ->join('pre_receiving_documents', 'pre_rd_lines.pre_rd_id', '=', 'pre_receiving_documents.id')
+                ->where('pre_receiving_documents.status', 'rd_generated')
+                ->sum('pre_rd_lines.received_qty');
+
+            if ((float) $totalReceived < (float) $line->qty) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function isReadyForPreReceiving(): bool
+    {
+        if (!$this->isVendorRepairFlow() || $this->status !== 'approved') {
+            return false;
+        }
+
+        $di = $this->deliveryInstruction;
+        if (!$di || $di->status !== 'issued') {
+            return false;
+        }
+
+        $dn = $di->deliveryNote;
+        if (!$dn || $dn->status !== 'dispatched') {
+            return false;
+        }
+
+        return $this->hasRemainingReceivableQuantity();
+    }
+
     public function scopeByStatus($query, string $status)
     {
         return $query->where('status', $status);

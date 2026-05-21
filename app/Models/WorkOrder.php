@@ -15,6 +15,7 @@ class WorkOrder extends Model
         'number',
         'date',
         'orf_ref',
+        'orf_id',
         'job_details',
         'pic_id',
         'service_type',
@@ -26,6 +27,11 @@ class WorkOrder extends Model
     protected $casts = [
         'date' => 'date',
     ];
+
+    public function orderRequestForm()
+    {
+        return $this->belongsTo(OrderRequestForm::class, 'orf_id');
+    }
 
     public function pic()
     {
@@ -40,6 +46,11 @@ class WorkOrder extends Model
     public function acceptanceLetter()
     {
         return $this->hasOne(AcceptanceLetter::class, 'wo_id');
+    }
+
+    public function materialRequests()
+    {
+        return $this->hasMany(MaterialRequest::class, 'wo_id');
     }
 
     public function approvalLogs()

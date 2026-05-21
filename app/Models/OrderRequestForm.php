@@ -5,49 +5,39 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class DeliveryInstruction extends Model
+class OrderRequestForm extends Model
 {
     use SoftDeletes;
 
-    protected $table = 'delivery_instructions';
+    protected $table = 'order_request_forms';
 
     protected $fillable = [
         'number',
         'date',
-        'mr_id',
-        'sr_id',
-        'warehouse_id',
+        'customer_name',
+        'request_details',
         'status',
         'created_by',
+        'decline_reason',
     ];
 
     protected $casts = [
         'date' => 'date',
     ];
 
-    public function materialRequest()
-    {
-        return $this->belongsTo(MaterialRequest::class, 'mr_id');
-    }
-
-    public function serviceRequest()
-    {
-        return $this->belongsTo(ServiceRequest::class, 'sr_id');
-    }
-
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function deliveryNote()
+    public function workOrders()
     {
-        return $this->hasOne(DeliveryNote::class, 'di_id');
+        return $this->hasMany(WorkOrder::class, 'orf_id');
     }
 
     public function approvalLogs()
     {
-        return $this->hasMany(ApprovalLog::class, 'document_id')->where('document_type', 'di');
+        return $this->hasMany(ApprovalLog::class, 'document_id')->where('document_type', 'orf');
     }
 
     public function scopeByStatus($query, string $status)

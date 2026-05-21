@@ -69,7 +69,12 @@ class DeliveryNoteController extends Controller
     public function show(DeliveryNote $deliveryNote): JsonResponse
     {
         return response()->json([
-            'delivery_note' => $deliveryNote->load('deliveryInstruction.materialRequest.requestor', 'creator', 'approvalLogs.actor'),
+            'delivery_note' => $deliveryNote->load(
+                'deliveryInstruction.materialRequest.requestor',
+                'deliveryInstruction.serviceRequest.requestor',
+                'creator',
+                'approvalLogs.actor'
+            ),
         ]);
     }
 

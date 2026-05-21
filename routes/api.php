@@ -13,12 +13,14 @@ use App\Http\Controllers\Api\MasterItemController;
 use App\Http\Controllers\Api\MaterialRequestController;
 use App\Http\Controllers\Api\MasterVendorController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\OrderRequestFormController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\PurchaseRequisitionController;
 use App\Http\Controllers\Api\PreReceivingDocumentController;
 use App\Http\Controllers\Api\ReceivingDocumentController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RrvController;
+use App\Http\Controllers\Api\SalesOrderController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ServiceRequestController;
 use App\Http\Controllers\Api\UserController;
@@ -60,11 +62,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('master-vendors/{masterVendor}/status', [MasterVendorController::class, 'changeStatus'])->middleware('role:purchasing,accounting');
 
     Route::apiResource('material-requests', MaterialRequestController::class);
+    Route::post('material-requests/{materialRequest}/pre-receiving-documents', [PreReceivingDocumentController::class, 'storeFromMaterialRequest']);
     Route::post('material-requests/{materialRequest}/approve-dept-head', [MaterialRequestController::class, 'approveByDeptHead']);
     Route::post('material-requests/{materialRequest}/flag-items', [MaterialRequestController::class, 'flagItems']);
     Route::post('material-requests/{materialRequest}/approve-pihak2', [MaterialRequestController::class, 'approveByPihak2']);
 
     Route::apiResource('service-requests', ServiceRequestController::class);
+    Route::post('service-requests/{serviceRequest}/pre-receiving-documents', [PreReceivingDocumentController::class, 'storeFromServiceRequest']);
     Route::post('service-requests/{serviceRequest}/approve-dept-head', [ServiceRequestController::class, 'approveByDeptHead']);
     Route::post('service-requests/{serviceRequest}/flag-items', [ServiceRequestController::class, 'flagItems']);
     Route::post('service-requests/{serviceRequest}/approve-pihak2', [ServiceRequestController::class, 'approveByPihak2']);
@@ -79,6 +83,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('purchase-orders', PurchaseOrderController::class);
     Route::post('purchase-orders/{purchaseOrder}/approve-pihak2', [PurchaseOrderController::class, 'approveByPihak2']);
 
+    Route::get('pre-receiving-documents/available-purchase-orders', [PreReceivingDocumentController::class, 'availablePurchaseOrders']);
     Route::apiResource('pre-receiving-documents', PreReceivingDocumentController::class);
     Route::post('pre-receiving-documents/{preReceivingDocument}/confirm', [PreReceivingDocumentController::class, 'confirm']);
 
@@ -86,7 +91,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('receiving-documents/{receivingDocument}/input-serial-numbers', [ReceivingDocumentController::class, 'inputSerialNumbers']);
     Route::post('receiving-documents/{receivingDocument}/approve', [ReceivingDocumentController::class, 'approve']);
 
+    Route::apiResource('order-request-forms', OrderRequestFormController::class);
+    Route::post('order-request-forms/{orderRequestForm}/submit', [OrderRequestFormController::class, 'submit']);
+    Route::post('order-request-forms/{orderRequestForm}/approve', [OrderRequestFormController::class, 'approve']);
+
+    Route::apiResource('sales-orders', SalesOrderController::class);
+    Route::post('sales-orders/{salesOrder}/submit', [SalesOrderController::class, 'submit']);
+    Route::post('sales-orders/{salesOrder}/approve', [SalesOrderController::class, 'approve']);
+    Route::post('sales-orders/{salesOrder}/material-requests', [SalesOrderController::class, 'storeMaterialRequest']);
+
     Route::apiResource('work-orders', WorkOrderController::class);
+    Route::post('work-orders/{workOrder}/material-requests', [WorkOrderController::class, 'storeMaterialRequest']);
     Route::post('work-orders/{workOrder}/submit', [WorkOrderController::class, 'submitForApproval']);
     Route::post('work-orders/{workOrder}/approve', [WorkOrderController::class, 'approve']);
 

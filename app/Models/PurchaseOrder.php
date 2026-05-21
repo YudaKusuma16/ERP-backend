@@ -47,6 +47,38 @@ class PurchaseOrder extends Model
         return $this->hasMany(PoLineItem::class, 'po_id');
     }
 
+    public function preReceivingDocuments()
+    {
+        return $this->hasMany(PreReceivingDocument::class, 'po_id');
+    }
+
+    public function hasRemainingReceivableQuantity(): bool
+    {
+        $this->loadMissing('lineItems');
+
+        if ($this->lineItems->isEmpty()) {
+            return false;
+        }
+
+        foreach ($this->lineItems as $line) {
+            $totalReceived = PreRdLine::where('po_line_id', $line->id)
+                ->join('pre_receiving_documents', 'pre_rd_lines.pre_rd_id', '=', 'pre_receiving_documents.id')
+                ->where('pre_receiving_documents.status', 'rd_generated')
+                ->sum('pre_rd_lines.received_qty');
+
+            if ((float) $totalReceived < (float) $line->qty) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function scopeAvailableForPreReceiving($query)
+    {
+        return $query->whereIn('status', ['approved', 'open', 'partially_closed']);
+    }
+
     public function priceComparisons()
     {
         return $this->hasMany(PriceComparison::class, 'po_id');

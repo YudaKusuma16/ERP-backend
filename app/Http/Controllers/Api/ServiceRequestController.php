@@ -105,7 +105,17 @@ class ServiceRequestController extends Controller
     public function show(ServiceRequest $serviceRequest): JsonResponse
     {
         return response()->json([
-            'sr' => $serviceRequest->load('lineItems', 'requestor', 'department', 'approvedByDeptHead', 'approvedByPihak2', 'approvalLogs.actor'),
+            'sr' => $serviceRequest->load(
+                'lineItems',
+                'requestor',
+                'department',
+                'approvedByDeptHead',
+                'approvedByPihak2',
+                'approvalLogs.actor',
+                'deliveryInstruction.deliveryNote',
+                'preReceivingDocuments.lines',
+                'preReceivingDocuments.receivingDocument',
+            ),
         ]);
     }
 
@@ -234,7 +244,44 @@ class ServiceRequestController extends Controller
             return response()->json(['message' => 'SR declined.', 'sr' => $serviceRequest->fresh()]);
         }
 
+        if ($serviceRequest->isVendorRepairFlow()) {
+            return $this->approveForVendorDelivery($serviceRequest, $request);
+        }
+
         return $this->approveAndGeneratePR($serviceRequest, $request, 'Flow 1/2/3');
+    }
+
+    private function approveForVendorDelivery(ServiceRequest $serviceRequest, Request $request): JsonResponse
+    {
+        return DB::transaction(function () use ($serviceRequest, $request) {
+            $serviceRequest->update([
+                'status' => 'approved',
+                'approved_by_pihak2' => $request->user()->id,
+            ]);
+
+            $this->auditTrail->log(
+                'sr',
+                $serviceRequest->id,
+                $request->user()->id,
+                'pending_pihak_ii',
+                'approved',
+                '3rd Party SR approved for vendor delivery flow (DI → DN → Pre-RD/RRV)'
+            );
+
+            $this->notificationService->notify(
+                $serviceRequest->requestor_id,
+                'sr_approved',
+                'SR Approved',
+                "SR {$serviceRequest->number} has been approved. Create Delivery Instruction next.",
+                'sr',
+                $serviceRequest->id
+            );
+
+            return response()->json([
+                'message' => 'SR approved. Continue with Delivery Instruction → Delivery Note → Pre-RD or RRV.',
+                'sr' => $serviceRequest->fresh()->load('lineItems', 'requestor', 'department'),
+            ]);
+        });
     }
 
     private function approveAndGeneratePR(ServiceRequest $serviceRequest, Request $request, string $flowLabel): JsonResponse
