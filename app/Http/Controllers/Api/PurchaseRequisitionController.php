@@ -7,24 +7,45 @@ use App\Models\ApprovalTier;
 use App\Models\PurchaseRequisition;
 use App\Models\PrLineItem;
 use App\Services\AuditTrailService;
+use App\Services\DeliveryInstructionFromPrService;
+use App\Services\DocumentNumberingService;
+use App\Services\EmailApprovalService;
 use App\Services\NotificationService;
 use App\Services\WorkflowEngine;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PurchaseRequisitionController extends Controller
 {
     public function __construct(
         private AuditTrailService $auditTrail,
         private NotificationService $notificationService,
+        private DocumentNumberingService $docNumbering,
         private WorkflowEngine $workflow,
+        private DeliveryInstructionFromPrService $deliveryInstructionFromPr,
+        private EmailApprovalService $emailApprovalService,
     ) {}
 
     public function index(Request $request): JsonResponse
     {
         $query = PurchaseRequisition::with('sourceMr', 'sourceSr', 'lineItems', 'pihak1', 'approvalLogs.actor');
 
-        if ($request->has('status')) {
+        if ($request->boolean('for_po_creation')) {
+            $query->where('status', 'forwarded_to_p3')
+                ->whereDoesntHave('purchaseOrders')
+                ->where(function ($q) {
+                    // SR PR: butuh PO (untuk Pre-RD setelah pengiriman ke vendor).
+                    $q->where('source_type', 'sr')
+                        // MR PR pengadaan: tidak termasuk WO/Transfer/SO yang berakhir di DI/DN.
+                        ->orWhere(function ($q2) {
+                            $q2->where('source_type', 'mr')
+                                ->whereHas('sourceMr', function ($mrQ) {
+                                    $mrQ->whereNotIn('source_type', ['wo', 'transfer', 'so']);
+                                });
+                        });
+                });
+        } elseif ($request->has('status')) {
             $query->byStatus($request->status);
         }
         if ($request->has('pr_type')) {
@@ -40,8 +61,15 @@ class PurchaseRequisitionController extends Controller
 
     public function show(PurchaseRequisition $purchaseRequisition): JsonResponse
     {
+        if ($purchaseRequisition->status === 'forwarded_to_p3') {
+            $actorId = (int) request()->user()->id;
+            DB::transaction(function () use ($purchaseRequisition, $actorId) {
+                $this->deliveryInstructionFromPr->ensureForForwardedPurchaseRequisition($purchaseRequisition, $actorId, false);
+            });
+        }
+
         return response()->json([
-            'pr' => $purchaseRequisition->load('lineItems', 'pihak1', 'approvalLogs.actor', 'sourceMr.lineItems.item', 'sourceSr.lineItems'),
+            'pr' => $purchaseRequisition->fresh()->load('lineItems', 'pihak1', 'approvalLogs.actor', 'sourceMr.lineItems.item', 'sourceSr.lineItems', 'deliveryInstruction.deliveryNote'),
         ]);
     }
 
@@ -93,6 +121,18 @@ class PurchaseRequisitionController extends Controller
             $purchaseRequisition->id
         );
 
+        $purchaseRequisition->load('pihak1');
+        $this->emailApprovalService->sendApprovalEmailsToRole(
+            roleCode: 'pihak_2',
+            documentType: 'pr',
+            documentId: $purchaseRequisition->id,
+            documentNumber: $purchaseRequisition->number,
+            requesterName: $purchaseRequisition->pihak1?->name,
+            totalAmount: $totalValue,
+            currentTier: 1,
+            totalTiers: $tierCount,
+        );
+
         return response()->json([
             'message' => 'Pricing input successfully. PR forwarded to Pihak II.',
             'pr' => $purchaseRequisition->fresh()->load('lineItems', 'pihak1'),
@@ -137,22 +177,35 @@ class PurchaseRequisitionController extends Controller
         $newTier = $purchaseRequisition->current_tier + 1;
 
         if ($newTier >= $purchaseRequisition->tier_count) {
-            $fromStatus = $purchaseRequisition->status;
-            $purchaseRequisition->update([
-                'status' => 'forwarded_to_p3',
-                'current_tier' => $newTier,
-            ]);
+            DB::transaction(function () use ($purchaseRequisition, $request, $newTier) {
+                $fromStatus = $purchaseRequisition->status;
+                $purchaseRequisition->update([
+                    'status' => 'forwarded_to_p3',
+                    'current_tier' => $newTier,
+                ]);
 
-            $this->auditTrail->log('pr', $purchaseRequisition->id, $request->user()->id, $fromStatus, 'forwarded_to_p3', 'PR fully approved by Pihak II (all tiers)');
+                $this->auditTrail->log('pr', $purchaseRequisition->id, $request->user()->id, $fromStatus, 'forwarded_to_p3', 'PR fully approved by Pihak II (all tiers)');
 
-            $this->notificationService->notifyUsersWithRole(
-                'purchasing',
-                'pr_approved',
-                'PR Approved - Ready for PO',
-                "PR {$purchaseRequisition->number} has been fully approved. Ready for PO creation.",
-                'pr',
-                $purchaseRequisition->id
-            );
+                $mrForNotify = $purchaseRequisition->source_type === 'mr' ? $purchaseRequisition->source() : null;
+                $deliveryChainAfterPr = $mrForNotify && $mrForNotify->createsDeliveryInstructionAfterPrApproval();
+
+                if (!$deliveryChainAfterPr) {
+                    $this->notificationService->notifyUsersWithRole(
+                        'purchasing',
+                        'pr_approved',
+                        'PR Approved - Ready for PO',
+                        "PR {$purchaseRequisition->number} has been fully approved. Ready for PO creation.",
+                        'pr',
+                        $purchaseRequisition->id
+                    );
+                }
+
+                $this->deliveryInstructionFromPr->ensureForForwardedPurchaseRequisition(
+                    $purchaseRequisition,
+                    (int) $request->user()->id,
+                    true
+                );
+            });
         } else {
             $purchaseRequisition->update(['current_tier' => $newTier]);
             $this->auditTrail->log('pr', $purchaseRequisition->id, $request->user()->id, 'pending_pihak_ii', 'pending_pihak_ii', "Pihak II Tier {$newTier}/{$purchaseRequisition->tier_count} approved");
@@ -166,11 +219,46 @@ class PurchaseRequisitionController extends Controller
                 'pr',
                 $purchaseRequisition->id
             );
+
+            $purchaseRequisition->load('pihak1');
+            $this->emailApprovalService->sendApprovalEmailsToRole(
+                roleCode: 'pihak_2',
+                documentType: 'pr',
+                documentId: $purchaseRequisition->id,
+                documentNumber: $purchaseRequisition->number,
+                requesterName: $purchaseRequisition->pihak1?->name,
+                totalAmount: $purchaseRequisition->total_value,
+                currentTier: $newTier + 1,
+                totalTiers: $purchaseRequisition->tier_count,
+            );
+        }
+
+        $prFresh = $purchaseRequisition->fresh()->load(
+            'lineItems',
+            'pihak1',
+            'deliveryInstruction.deliveryNote',
+            'sourceMr.lineItems.item',
+            'sourceSr.lineItems',
+        );
+
+        $fullyApproved = $prFresh->status === 'forwarded_to_p3';
+        $approvalMessage = "PR approved for tier {$newTier}. Additional approval tiers required.";
+        if ($fullyApproved) {
+            if ($prFresh->source_type === 'sr') {
+                $approvalMessage = 'PR fully approved. Continue with Delivery Instruction and Delivery Note.';
+            } else {
+                $mr = $prFresh->source_type === 'mr' ? $prFresh->sourceMr : null;
+                if ($mr && $mr->createsDeliveryInstructionAfterPrApproval()) {
+                    $approvalMessage = 'PR fully approved. Continue with Delivery Instruction and Delivery Note (no Purchase Order for this MR).';
+                } else {
+                    $approvalMessage = 'PR fully approved and forwarded to Purchasing.';
+                }
+            }
         }
 
         return response()->json([
-            'message' => $purchaseRequisition->status === 'forwarded_to_p3' ? 'PR fully approved and forwarded to Purchasing.' : "PR approved for tier {$newTier}. Additional approval tiers required.",
-            'pr' => $purchaseRequisition->fresh()->load('lineItems', 'pihak1'),
+            'message' => $approvalMessage,
+            'pr' => $prFresh,
         ]);
     }
 }

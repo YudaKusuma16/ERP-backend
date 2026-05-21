@@ -9,6 +9,7 @@ use App\Models\PurchaseRequisition;
 use App\Models\PrLineItem;
 use App\Services\AuditTrailService;
 use App\Services\DocumentNumberingService;
+use App\Services\EmailApprovalService;
 use App\Services\NotificationService;
 use App\Services\WorkflowEngine;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,7 @@ class ServiceRequestController extends Controller
         private AuditTrailService $auditTrail,
         private NotificationService $notificationService,
         private WorkflowEngine $workflow,
+        private EmailApprovalService $emailApprovalService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -93,6 +95,16 @@ class ServiceRequestController extends Controller
                 "SR {$sr->number} requires your approval.",
                 'sr',
                 $sr->id
+            );
+
+            $sr->load('requestor', 'department');
+            $this->emailApprovalService->sendApprovalEmailsToRole(
+                roleCode: 'dept_head',
+                documentType: 'sr',
+                documentId: $sr->id,
+                documentNumber: $sr->number,
+                requesterName: $sr->requestor?->name,
+                department: $sr->department?->name,
             );
 
             return response()->json([
@@ -174,6 +186,16 @@ class ServiceRequestController extends Controller
             "SR {$serviceRequest->number} requires your validation.",
             'sr',
             $serviceRequest->id
+        );
+
+        $serviceRequest->load('requestor', 'department');
+        $this->emailApprovalService->sendApprovalEmailsToRole(
+            roleCode: $pihak2Role,
+            documentType: 'sr',
+            documentId: $serviceRequest->id,
+            documentNumber: $serviceRequest->number,
+            requesterName: $serviceRequest->requestor?->name,
+            department: $serviceRequest->department?->name,
         );
 
         return response()->json([

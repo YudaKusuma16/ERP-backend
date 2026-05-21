@@ -29,12 +29,12 @@ class PurchaseRequisition extends Model
 
     public function sourceMr()
     {
-        return $this->belongsTo(MaterialRequest::class, 'source_id')->where('source_type', 'mr');
+        return $this->belongsTo(MaterialRequest::class, 'source_id');
     }
 
     public function sourceSr()
     {
-        return $this->belongsTo(ServiceRequest::class, 'source_id')->where('source_type', 'sr');
+        return $this->belongsTo(ServiceRequest::class, 'source_id');
     }
 
     public function source()
@@ -50,9 +50,19 @@ class PurchaseRequisition extends Model
         return $this->hasMany(PrLineItem::class, 'pr_id');
     }
 
+    public function deliveryInstruction()
+    {
+        return $this->hasOne(DeliveryInstruction::class, 'pr_id');
+    }
+
     public function pihak1()
     {
         return $this->belongsTo(User::class, 'pihak1_id');
+    }
+
+    public function purchaseOrders()
+    {
+        return $this->hasMany(PurchaseOrder::class, 'pr_id');
     }
 
     public function approvalLogs()

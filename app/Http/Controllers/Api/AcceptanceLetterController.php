@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AcceptanceLetter;
 use App\Models\AlLineItem;
+use App\Models\MasterItem;
 use App\Services\AuditTrailService;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
@@ -42,7 +43,7 @@ class AcceptanceLetterController extends Controller
 
     public function addLineItems(Request $request, AcceptanceLetter $acceptanceLetter): JsonResponse
     {
-        if (!in_array($acceptanceLetter->status, ['auto_created', 'pending_approval'])) {
+        if (!in_array($acceptanceLetter->status, ['auto_created', 'pending_approval', 'approved'])) {
             return response()->json(['message' => 'Cannot add line items in current status.'], 422);
         }
 
@@ -78,8 +79,8 @@ class AcceptanceLetterController extends Controller
 
     public function updateLineItems(Request $request, AcceptanceLetter $acceptanceLetter): JsonResponse
     {
-        if ($acceptanceLetter->status !== 'in_progress') {
-            return response()->json(['message' => 'Line items can only be updated when AL is in progress.'], 422);
+        if (!in_array($acceptanceLetter->status, ['approved', 'in_progress'])) {
+            return response()->json(['message' => 'Line items can only be updated when AL is approved or in progress.'], 422);
         }
 
         $validated = $request->validate([
@@ -120,6 +121,10 @@ class AcceptanceLetterController extends Controller
                 return response()->json(['message' => 'Acceptance Letter declined.', 'acceptance_letter' => $acceptanceLetter->fresh()]);
             }
 
+            if (!$acceptanceLetter->lineItems()->exists()) {
+                return response()->json(['message' => 'Add Acceptance Letter line items before approving.'], 422);
+            }
+
             $acceptanceLetter->update(['status' => 'approved']);
             $this->auditTrail->log('al', $acceptanceLetter->id, $request->user()->id, 'pending_approval', 'approved', 'AL approved');
             return response()->json(['message' => 'Acceptance Letter approved.', 'acceptance_letter' => $acceptanceLetter->fresh()]);
@@ -131,9 +136,48 @@ class AcceptanceLetterController extends Controller
             return response()->json(['message' => 'Acceptance Letter moved to in progress.', 'acceptance_letter' => $acceptanceLetter->fresh()]);
         }
 
+        // WO-generated draft AL: approve after items exist promotes to pending_approval workflow.
+        if ($acceptanceLetter->status === 'auto_created') {
+            if ($validated['action'] === 'decline') {
+                return response()->json(['message' => 'Decline from auto-created state is not supported. Edit line items instead.'], 422);
+            }
+            if (!$acceptanceLetter->lineItems()->exists()) {
+                return response()->json(['message' => 'Add line items before submitting this Acceptance Letter for approval.'], 422);
+            }
+            $acceptanceLetter->update(['status' => 'pending_approval']);
+            $this->auditTrail->log('al', $acceptanceLetter->id, $request->user()->id, 'auto_created', 'pending_approval', 'AL submitted for approval from auto-created');
+
+            return response()->json(['message' => 'Acceptance Letter submitted for approval.', 'acceptance_letter' => $acceptanceLetter->fresh()]);
+        }
+
         if ($acceptanceLetter->status === 'in_progress') {
+            $lineItems = $acceptanceLetter->lineItems()->get();
+            if ($lineItems->isEmpty()) {
+                return response()->json(['message' => 'Cannot complete AL without line items.'], 422);
+            }
+
+            $missingLocation = $lineItems
+                ->filter(fn ($li) => in_array($li->item_status, ['terpasang', 'ex_remote']))
+                ->first(fn ($li) => empty($li->location));
+            if ($missingLocation) {
+                return response()->json(['message' => 'Location is required for Terpasang / Ex Remote items before completing.'], 422);
+            }
+
+            // Update master item location when available.
+            foreach ($lineItems as $li) {
+                if (!$li->item_id) {
+                    continue;
+                }
+                if ($li->item_status === 'tidak_jadi') {
+                    continue;
+                }
+                MasterItem::whereKey($li->item_id)->update([
+                    'location' => $li->location,
+                ]);
+            }
+
             $acceptanceLetter->update(['status' => 'completed']);
-            $this->auditTrail->log('al', $acceptanceLetter->id, $request->user()->id, 'in_progress', 'completed', 'AL completed');
+            $this->auditTrail->log('al', $acceptanceLetter->id, $request->user()->id, 'in_progress', 'completed', 'AL completed (item locations updated)');
 
             $this->notificationService->notify(
                 $acceptanceLetter->workOrder->created_by,
@@ -147,6 +191,8 @@ class AcceptanceLetterController extends Controller
             return response()->json(['message' => 'Acceptance Letter completed.', 'acceptance_letter' => $acceptanceLetter->fresh()]);
         }
 
-        return response()->json(['message' => 'Invalid status for this action.'], 422);
+        return response()->json([
+            'message' => 'This action is not allowed for AL status '.$acceptanceLetter->status.'.',
+        ], 422);
     }
 }

@@ -48,6 +48,7 @@ class PreReceivingDocumentController extends Controller
             'purchaseOrder.vendor',
             'materialRequest',
             'serviceRequest',
+            'deliveryNote.deliveryInstruction.materialRequest',
             'pihak1',
             'lines',
             'receivingDocument'
@@ -271,6 +272,7 @@ class PreReceivingDocumentController extends Controller
                 'materialRequest.deliveryInstruction.deliveryNote',
                 'serviceRequest.lineItems',
                 'serviceRequest.deliveryInstruction.deliveryNote',
+                'deliveryNote.deliveryInstruction.materialRequest.lineItems.item',
                 'lines.srLineItem',
                 'pihak1',
                 'receivingDocument.lineItems',

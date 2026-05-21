@@ -13,10 +13,10 @@ class MaterialRequest extends Model
         'number',
         'date',
         'source_type',
-        'requestor_id',
-        'department_id',
         'wo_id',
         'so_id',
+        'requestor_id',
+        'department_id',
         'notes',
         'status',
         'pr_id',
@@ -34,11 +34,6 @@ class MaterialRequest extends Model
         return $this->belongsTo(User::class, 'requestor_id');
     }
 
-    public function department()
-    {
-        return $this->belongsTo(Department::class);
-    }
-
     public function workOrder()
     {
         return $this->belongsTo(WorkOrder::class, 'wo_id');
@@ -49,6 +44,16 @@ class MaterialRequest extends Model
         return $this->belongsTo(SalesOrder::class, 'so_id');
     }
 
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    public function lineItems()
+    {
+        return $this->hasMany(MrLineItem::class, 'mr_id');
+    }
+
     public function deliveryInstruction()
     {
         return $this->hasOne(DeliveryInstruction::class, 'mr_id');
@@ -57,6 +62,26 @@ class MaterialRequest extends Model
     public function preReceivingDocuments()
     {
         return $this->hasMany(PreReceivingDocument::class, 'mr_id');
+    }
+
+    public function purchaseRequisition()
+    {
+        return $this->hasOne(PurchaseRequisition::class, 'source_id')->where('source_type', 'mr');
+    }
+
+    public function approvedByDeptHead()
+    {
+        return $this->belongsTo(User::class, 'approved_by_dept_head');
+    }
+
+    public function approvedByPihak2()
+    {
+        return $this->belongsTo(User::class, 'approved_by_pihak2');
+    }
+
+    public function approvalLogs()
+    {
+        return $this->hasMany(ApprovalLog::class, 'document_id')->where('document_type', 'mr');
     }
 
     public function hasRemainingReceivableQuantity(): bool
@@ -100,31 +125,6 @@ class MaterialRequest extends Model
         return $this->hasRemainingReceivableQuantity();
     }
 
-    public function lineItems()
-    {
-        return $this->hasMany(MrLineItem::class, 'mr_id');
-    }
-
-    public function purchaseRequisition()
-    {
-        return $this->hasOne(PurchaseRequisition::class, 'source_id')->where('source_type', 'mr');
-    }
-
-    public function approvedByDeptHead()
-    {
-        return $this->belongsTo(User::class, 'approved_by_dept_head');
-    }
-
-    public function approvedByPihak2()
-    {
-        return $this->belongsTo(User::class, 'approved_by_pihak2');
-    }
-
-    public function approvalLogs()
-    {
-        return $this->hasMany(ApprovalLog::class, 'document_id')->where('document_type', 'mr');
-    }
-
     public function isAssetDeliveryFlow(): bool
     {
         return $this->source_type === 'asset';
@@ -132,7 +132,7 @@ class MaterialRequest extends Model
 
     public function isFlowA(): bool
     {
-        return in_array($this->source_type, ['internal', 'asset', 'customer']);
+        return in_array($this->source_type, ['internal', 'customer', 'so', 'wo', 'asset']);
     }
 
     public function usesProcurementFlow(): bool
@@ -145,9 +145,25 @@ class MaterialRequest extends Model
         return $this->source_type === 'project_internal';
     }
 
+    /**
+     * MR pengiriman murni yang tidak melalui PR: Transfer (antar gudang).
+     */
+    public function skipsPurchaseRequisition(): bool
+    {
+        return in_array($this->source_type, ['transfer'], true);
+    }
+
+    /**
+     * Setelah PR disetujui penuh, fulfilment lanjut DI (lalu DN), bukan PO.
+     */
+    public function createsDeliveryInstructionAfterPrApproval(): bool
+    {
+        return in_array($this->source_type, ['wo', 'so'], true);
+    }
+
     public function requiresPihak2Approval(): bool
     {
-        return in_array($this->source_type, ['internal', 'asset', 'customer']);
+        return in_array($this->source_type, ['internal', 'customer', 'so', 'wo', 'asset'], true);
     }
 
     public function scopeByStatus($query, string $status)

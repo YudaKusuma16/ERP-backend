@@ -16,6 +16,7 @@ class DeliveryInstruction extends Model
         'date',
         'mr_id',
         'sr_id',
+        'pr_id',
         'warehouse_id',
         'status',
         'created_by',
@@ -33,6 +34,11 @@ class DeliveryInstruction extends Model
     public function serviceRequest()
     {
         return $this->belongsTo(ServiceRequest::class, 'sr_id');
+    }
+
+    public function purchaseRequisition()
+    {
+        return $this->belongsTo(PurchaseRequisition::class, 'pr_id');
     }
 
     public function creator()

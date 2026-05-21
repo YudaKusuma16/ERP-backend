@@ -14,8 +14,8 @@ class WorkOrder extends Model
     protected $fillable = [
         'number',
         'date',
-        'orf_ref',
         'orf_id',
+        'orf_ref',
         'job_details',
         'pic_id',
         'service_type',

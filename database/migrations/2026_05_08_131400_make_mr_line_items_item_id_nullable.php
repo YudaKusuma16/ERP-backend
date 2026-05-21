@@ -9,22 +9,17 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasColumn('mr_line_items', 'item_name')) {
-            Schema::table('mr_line_items', function (Blueprint $table) {
-                $table->string('item_name')->nullable()->after('item_id');
-            });
-        }
-
-        // Make item_id nullable + FK nullOnDelete (safe for Postgres without doctrine/dbal).
+        // Idempotent: pada fresh install, kondisi ini sudah benar dari create migration.
+        // Migrasi ini hanya berdampak pada DB lama yang masih punya item_id NOT NULL.
         Schema::table('mr_line_items', function (Blueprint $table) {
-            // drop existing FK if any
             try {
                 $table->dropForeign(['item_id']);
             } catch (\Throwable $e) {
-                // ignore if doesn't exist
+                // ignore kalau FK belum ada
             }
         });
 
+        // ALTER ... DROP NOT NULL bersifat idempotent di Postgres.
         DB::statement('ALTER TABLE mr_line_items ALTER COLUMN item_id DROP NOT NULL');
 
         Schema::table('mr_line_items', function (Blueprint $table) {
@@ -42,14 +37,11 @@ return new class extends Migration
             }
         });
 
-        // NOTE: may fail if NULL item_id rows exist.
+        // WARNING: bisa gagal kalau ada baris dengan item_id NULL.
         DB::statement('ALTER TABLE mr_line_items ALTER COLUMN item_id SET NOT NULL');
 
         Schema::table('mr_line_items', function (Blueprint $table) {
             $table->foreign('item_id')->references('id')->on('master_items')->cascadeOnDelete();
-            if (Schema::hasColumn('mr_line_items', 'item_name')) {
-                $table->dropColumn('item_name');
-            }
         });
     }
 };

@@ -11,6 +11,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseRequisition;
 use App\Services\AuditTrailService;
 use App\Services\DocumentNumberingService;
+use App\Services\EmailApprovalService;
 use App\Services\NotificationService;
 use App\Services\WorkflowEngine;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +25,7 @@ class PurchaseOrderController extends Controller
         private AuditTrailService $auditTrail,
         private NotificationService $notificationService,
         private WorkflowEngine $workflow,
+        private EmailApprovalService $emailApprovalService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -35,6 +37,9 @@ class PurchaseOrderController extends Controller
         }
         if ($request->has('search')) {
             $query->where('number', 'like', '%' . $request->search . '%');
+        }
+        if ($request->filled('pr_id')) {
+            $query->where('pr_id', $request->pr_id);
         }
 
         $pos = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 20);
@@ -138,6 +143,16 @@ class PurchaseOrderController extends Controller
                 $po->id
             );
 
+            $this->emailApprovalService->sendApprovalEmailsToRole(
+                roleCode: 'pihak_2',
+                documentType: 'po',
+                documentId: $po->id,
+                documentNumber: $po->number,
+                totalAmount: $totalValue,
+                currentTier: 1,
+                totalTiers: $tierCount,
+            );
+
             return response()->json([
                 'message' => 'Purchase Order created successfully.',
                 'po' => $po->load('lineItems', 'priceComparisons', 'vendor', 'purchaseRequisition', 'createdBy'),
@@ -208,6 +223,16 @@ class PurchaseOrderController extends Controller
                 "PO {$purchaseOrder->number} requires Pihak II Tier " . ($newTier + 1) . " approval. {$remaining} tier(s) remaining.",
                 'po',
                 $purchaseOrder->id
+            );
+
+            $this->emailApprovalService->sendApprovalEmailsToRole(
+                roleCode: 'pihak_2',
+                documentType: 'po',
+                documentId: $purchaseOrder->id,
+                documentNumber: $purchaseOrder->number,
+                totalAmount: $purchaseOrder->total_value,
+                currentTier: $newTier + 1,
+                totalTiers: $purchaseOrder->tier_count,
             );
         }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryInstruction;
+use App\Models\DeliveryNote;
 use App\Models\MaterialRequest;
 use App\Models\ServiceRequest;
 use App\Services\AuditTrailService;
@@ -23,13 +24,29 @@ class DeliveryInstructionController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = DeliveryInstruction::with('materialRequest', 'serviceRequest', 'creator', 'deliveryNote');
+        $query = DeliveryInstruction::with([
+            'materialRequest',
+            'serviceRequest',
+            'purchaseRequisition.sourceSr',
+            'creator',
+            'deliveryNote',
+        ]);
 
         if ($request->has('status')) {
             $query->byStatus($request->status);
         }
         if ($request->has('search')) {
             $query->where('number', 'like', '%' . $request->search . '%');
+        }
+
+        if ($request->filled('source')) {
+            if ($request->source === 'mr') {
+                $query->whereNotNull('mr_id');
+            } elseif ($request->source === 'sr') {
+                $query->where(function ($q) {
+                    $q->whereNotNull('sr_id')->orWhereNotNull('pr_id');
+                });
+            }
         }
 
         $dis = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 20);
@@ -85,7 +102,7 @@ class DeliveryInstructionController extends Controller
 
             return response()->json([
                 'message' => 'Delivery Instruction created successfully.',
-                'delivery_instruction' => $di->load('materialRequest', 'creator'),
+                'delivery_instruction' => $di->load('materialRequest', 'purchaseRequisition.sourceSr', 'creator'),
             ], 201);
         });
     }
@@ -128,13 +145,17 @@ class DeliveryInstructionController extends Controller
     public function show(DeliveryInstruction $deliveryInstruction): JsonResponse
     {
         return response()->json([
-            'delivery_instruction' => $deliveryInstruction->load(
+            'delivery_instruction' => $deliveryInstruction->load([
                 'materialRequest.requestor',
+                'materialRequest.lineItems.item',
                 'serviceRequest.requestor',
+                'serviceRequest.lineItems',
+                'purchaseRequisition.sourceSr',
+                'purchaseRequisition.lineItems',
                 'creator',
                 'deliveryNote',
-                'approvalLogs.actor'
-            ),
+                'approvalLogs.actor',
+            ]),
         ]);
     }
 
@@ -159,9 +180,32 @@ class DeliveryInstructionController extends Controller
             return response()->json(['message' => 'DI must be in draft status to issue.'], 422);
         }
 
-        $deliveryInstruction->update(['status' => 'issued']);
-        $this->auditTrail->log('di', $deliveryInstruction->id, request()->user()->id, 'draft', 'issued', 'DI issued');
+        return DB::transaction(function () use ($deliveryInstruction) {
+            $userId = request()->user()->id;
 
-        return response()->json(['message' => 'Delivery Instruction issued.', 'delivery_instruction' => $deliveryInstruction->fresh()]);
+            $deliveryInstruction->update(['status' => 'issued']);
+            $this->auditTrail->log('di', $deliveryInstruction->id, $userId, 'draft', 'issued', 'DI issued');
+
+            $dn = DeliveryNote::where('di_id', $deliveryInstruction->id)->orderBy('id', 'desc')->first();
+            if (!$dn) {
+                $dn = DeliveryNote::create([
+                    'number' => $this->docNumbering->generate('dn'),
+                    'date' => now()->toDateString(),
+                    'di_id' => $deliveryInstruction->id,
+                    'driver' => null,
+                    'vehicle' => null,
+                    'status' => 'draft',
+                    'created_by' => $userId,
+                ]);
+
+                $this->auditTrail->log('dn', $dn->id, $userId, 'created', 'draft', 'DN auto-created from issued DI ' . $deliveryInstruction->number);
+            }
+
+            return response()->json([
+                'message' => 'Delivery Instruction issued. Delivery Note created.',
+                'delivery_instruction' => $deliveryInstruction->fresh()->load('deliveryNote'),
+                'delivery_note' => $dn->fresh()->load('deliveryInstruction', 'creator'),
+            ]);
+        });
     }
 }

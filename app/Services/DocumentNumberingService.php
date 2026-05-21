@@ -9,6 +9,8 @@ class DocumentNumberingService
     public function generate(string $documentType, ?string $prefix = null): string
     {
         $prefixMap = [
+            'orf' => 'ORF',
+            'so' => 'SO',
             'mr' => 'MR',
             'sr' => 'SR',
             'pr' => 'PR',

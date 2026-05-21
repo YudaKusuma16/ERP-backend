@@ -17,6 +17,7 @@ class PreReceivingDocument extends Model
         'po_id',
         'mr_id',
         'sr_id',
+        'dn_id',
         'pihak1_id',
         'status',
         'notes',
@@ -39,6 +40,11 @@ class PreReceivingDocument extends Model
     public function serviceRequest()
     {
         return $this->belongsTo(ServiceRequest::class, 'sr_id');
+    }
+
+    public function deliveryNote()
+    {
+        return $this->belongsTo(DeliveryNote::class, 'dn_id');
     }
 
     public function isFromMaterialRequest(): bool

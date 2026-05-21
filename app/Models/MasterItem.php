@@ -11,11 +11,13 @@ class MasterItem extends Model
 
     protected $fillable = [
         'name',
+        'barcode',
         'type',
         'unit',
         'category',
         'asset_code',
         'coa',
+        'location',
         'status',
         'created_by',
         'validated_by',

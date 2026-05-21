@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AcceptanceLetterController;
 use App\Http\Controllers\Api\ApprovalLogController;
 use App\Http\Controllers\Api\ApprovalTierController;
+use App\Http\Controllers\Api\ApprovalTokenController;
 use App\Http\Controllers\Api\AttachmentController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DepartmentController;
@@ -31,6 +32,8 @@ Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
     Route::post('register', [AuthController::class, 'register']);
 });
+
+Route::get('approval/verify', [ApprovalTokenController::class, 'verify']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('auth')->group(function () {
@@ -134,4 +137,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('export/receiving-documents', [ExportController::class, 'receivingDocuments']);
 
     Route::get('approval-logs', [ApprovalLogController::class, 'index']);
+
+    Route::post('approval/send-email', [ApprovalTokenController::class, 'send']);
+    Route::post('approval/send-email-role', [ApprovalTokenController::class, 'sendToRole']);
 });
