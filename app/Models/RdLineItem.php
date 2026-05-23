@@ -10,6 +10,8 @@ class RdLineItem extends Model
 
     protected $fillable = [
         'rd_id',
+        'pre_rd_line_id',
+        'unit_index',
         'item_name',
         'serial_number',
         'tag_number',
@@ -20,5 +22,10 @@ class RdLineItem extends Model
     public function receivingDocument()
     {
         return $this->belongsTo(ReceivingDocument::class, 'rd_id');
+    }
+
+    public function preRdLine()
+    {
+        return $this->belongsTo(PreRdLine::class, 'pre_rd_line_id');
     }
 }

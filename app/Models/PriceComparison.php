@@ -8,6 +8,7 @@ class PriceComparison extends Model
 {
     protected $fillable = [
         'po_id',
+        'vendor_id',
         'vendor_name',
         'quoted_price',
         'notes',
@@ -20,5 +21,10 @@ class PriceComparison extends Model
     public function purchaseOrder()
     {
         return $this->belongsTo(PurchaseOrder::class, 'po_id');
+    }
+
+    public function vendor()
+    {
+        return $this->belongsTo(MasterVendor::class, 'vendor_id');
     }
 }

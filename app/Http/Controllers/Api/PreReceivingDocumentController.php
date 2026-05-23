@@ -321,13 +321,19 @@ class PreReceivingDocumentController extends Controller
             ]);
 
             foreach ($preReceivingDocument->fresh()->lines as $line) {
-                RdLineItem::create([
-                    'rd_id' => $rd->id,
-                    'item_name' => $line->item_name,
-                ]);
+                $unitCount = max(1, (int) ceil((float) $line->received_qty));
+                for ($i = 1; $i <= $unitCount; $i++) {
+                    RdLineItem::create([
+                        'rd_id'          => $rd->id,
+                        'pre_rd_line_id' => $line->id,
+                        'unit_index'     => $i,
+                        'item_name'      => $line->item_name,
+                    ]);
+                }
             }
 
             $preReceivingDocument->update(['status' => 'rd_generated']);
+
             $this->auditTrail->log('pre_rd', $preReceivingDocument->id, $request->user()->id, 'confirmed', 'rd_generated', 'RD generated: ' . $rd->number);
 
             if ($preReceivingDocument->isFromMaterialRequest()) {

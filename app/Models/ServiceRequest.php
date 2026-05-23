@@ -48,11 +48,6 @@ class ServiceRequest extends Model
         return $this->hasOne(PurchaseRequisition::class, 'source_id')->where('source_type', 'sr');
     }
 
-    /** Delivery instruction created when the SR’s PR is fully approved (vendor repair / shipping chain). */
-    public function deliveryInstruction()
-    {
-        return $this->hasOne(DeliveryInstruction::class, 'pr_id', 'pr_id');
-    }
 
     public function approvedByDeptHead()
     {

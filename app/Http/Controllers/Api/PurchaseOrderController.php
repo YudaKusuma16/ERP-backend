@@ -61,7 +61,7 @@ class PurchaseOrderController extends Controller
             'items.*.discount_type' => 'nullable|in:percentage,fixed',
             'items.*.description' => 'nullable|string',
             'price_comparisons' => 'required|array|min:2',
-            'price_comparisons.*.vendor_name' => 'required|string',
+            'price_comparisons.*.vendor_id' => 'required|exists:master_vendors,id',
             'price_comparisons.*.quoted_price' => 'required|numeric|min:0',
             'price_comparisons.*.notes' => 'nullable|string',
         ]);
@@ -74,6 +74,12 @@ class PurchaseOrderController extends Controller
         $vendor = MasterVendor::find($validated['vendor_id']);
         if (!$vendor || $vendor->status !== 'active') {
             return response()->json(['message' => 'Only active vendors can be selected.'], 422);
+        }
+
+        // Pastikan semua vendor di price comparison adalah active dan tidak ada yang sama
+        $compVendorIds = array_column($validated['price_comparisons'], 'vendor_id');
+        if (count($compVendorIds) !== count(array_unique($compVendorIds))) {
+            return response()->json(['message' => 'Each vendor in price comparison must be different.'], 422);
         }
 
         return DB::transaction(function () use ($validated, $request, $pr) {
@@ -124,11 +130,13 @@ class PurchaseOrderController extends Controller
             }
 
             foreach ($validated['price_comparisons'] as $comparison) {
+                $compVendor = MasterVendor::find($comparison['vendor_id']);
                 PriceComparison::create([
-                    'po_id' => $po->id,
-                    'vendor_name' => $comparison['vendor_name'],
+                    'po_id'        => $po->id,
+                    'vendor_id'    => $comparison['vendor_id'],
+                    'vendor_name'  => $compVendor?->name ?? 'Unknown Vendor',
                     'quoted_price' => $comparison['quoted_price'],
-                    'notes' => $comparison['notes'] ?? null,
+                    'notes'        => $comparison['notes'] ?? null,
                 ]);
             }
 
