@@ -127,6 +127,15 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        // Channel khusus untuk mencatat aktivitas pengguna di aplikasi ERP
+        'activity' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/activity.log'),
+            'level' => 'info',
+            'days' => 30, // File log lebih dari 30 hari akan dihapus otomatis
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -23,12 +24,27 @@ class AuthController extends Controller
         $user = User::where('email', $request->email)->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
+            // Log percobaan login gagal (kredensial salah)
+            Log::channel('activity')->warning('[AUTH] Login GAGAL - Kredensial tidak valid', [
+                'email'      => $request->email,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
 
         if (!$user->is_active) {
+            // Log percobaan login gagal (akun nonaktif)
+            Log::channel('activity')->warning('[AUTH] Login GAGAL - Akun nonaktif', [
+                'user_id'    => $user->id,
+                'email'      => $user->email,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
             throw ValidationException::withMessages([
                 'email' => ['Your account is inactive.'],
             ]);
@@ -36,14 +52,32 @@ class AuthController extends Controller
 
         $token = $user->createToken('auth-token')->plainTextToken;
 
+        // Log login berhasil
+        Log::channel('activity')->info('[AUTH] User LOGIN berhasil', [
+            'user_id'    => $user->id,
+            'user_name'  => $user->name,
+            'user_email' => $user->email,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
         return response()->json([
-            'user' => $user->load('department', 'roles'),
+            'user'  => $user->load('department', 'roles'),
             'token' => $token,
         ]);
     }
 
     public function logout(Request $request): JsonResponse
     {
+        // Log logout sebelum token dihapus
+        Log::channel('activity')->info('[AUTH] User LOGOUT', [
+            'user_id'    => $request->user()->id,
+            'user_name'  => $request->user()->name,
+            'user_email' => $request->user()->email,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Logged out successfully.']);
